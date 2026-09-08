@@ -389,16 +389,17 @@ func (s *ReportService) getReport(c *gin.Context) {
 	holidayMap := make(map[string]string)
 	for _, h := range holidays {
 		if h.IsRest {
-			holidayMap[h.HolidayDate] = h.HolidayName
+			holidayMap[normalizeDate(h.HolidayDate)] = h.HolidayName
 		}
 	}
 
 	planMap := make(map[string]map[int]*model.DailyProductionPlan)
 	for _, p := range plans {
-		if planMap[p.PlanDate] == nil {
-			planMap[p.PlanDate] = make(map[int]*model.DailyProductionPlan)
+		d := normalizeDate(p.PlanDate)
+		if planMap[d] == nil {
+			planMap[d] = make(map[int]*model.DailyProductionPlan)
 		}
-		planMap[p.PlanDate][p.RowNo] = &p
+		planMap[d][p.RowNo] = &p
 	}
 
 	matrix := make([][]*int, 10)
@@ -514,16 +515,17 @@ func (s *ReportService) exportReport(c *gin.Context) {
 	holidaySet := make(map[string]bool)
 	for _, h := range holidays {
 		if h.IsRest {
-			holidaySet[h.HolidayDate] = true
+			holidaySet[normalizeDate(h.HolidayDate)] = true
 		}
 	}
 
 	planMap := make(map[string]map[int]*model.DailyProductionPlan)
 	for _, p := range plans {
-		if planMap[p.PlanDate] == nil {
-			planMap[p.PlanDate] = make(map[int]*model.DailyProductionPlan)
+		d := normalizeDate(p.PlanDate)
+		if planMap[d] == nil {
+			planMap[d] = make(map[int]*model.DailyProductionPlan)
 		}
-		planMap[p.PlanDate][p.RowNo] = &p
+		planMap[d][p.RowNo] = &p
 	}
 
 	matrix := make([][]*int, 10)
@@ -645,4 +647,11 @@ func getVal(p *int) int {
 		return 0
 	}
 	return *p
+}
+
+func normalizeDate(s string) string {
+	if len(s) >= 10 {
+		return s[:10]
+	}
+	return s
 }

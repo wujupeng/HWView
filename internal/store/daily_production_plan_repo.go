@@ -73,7 +73,7 @@ func (r *DailyProductionPlanRepo) ListByDateRange(ctx context.Context, startDate
 	}
 	var plans []model.DailyProductionPlan
 	err := r.db.WithContext(ctx).
-		Where("plan_date >= ? AND plan_date <= ? AND line_code = ?", startDate, endDate, lineCode).
+		Where("DATE(plan_date) >= ? AND DATE(plan_date) <= ? AND line_code = ?", startDate, endDate, lineCode).
 		Order("plan_date ASC, row_no ASC").
 		Find(&plans).Error
 	return plans, err
