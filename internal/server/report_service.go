@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/hwview/hwview/internal/audit"
 	"github.com/hwview/hwview/internal/store"
 	"github.com/hwview/hwview/pkg/model"
 	"github.com/xuri/excelize/v2"
@@ -14,18 +15,20 @@ import (
 )
 
 type ReportService struct {
-	planRepo   *store.DailyProductionPlanRepo
+	planRepo    *store.DailyProductionPlanRepo
 	holidayRepo *store.HolidayRepo
-	cartonRepo *store.CartonSpecRepo
-	db         *gorm.DB
+	cartonRepo  *store.CartonSpecRepo
+	db          *gorm.DB
+	auditSvc    *audit.Service
 }
 
-func NewReportService(db *gorm.DB) *ReportService {
+func NewReportService(db *gorm.DB, auditSvc *audit.Service) *ReportService {
 	return &ReportService{
 		planRepo:    store.NewDailyProductionPlanRepo(db),
 		holidayRepo: store.NewHolidayRepo(db),
 		cartonRepo:  store.NewCartonSpecRepo(db),
 		db:          db,
+		auditSvc:    auditSvc,
 	}
 }
 
@@ -56,14 +59,14 @@ func (s *ReportService) RegisterRoutes(rg *gin.RouterGroup) {
 }
 
 type planInput struct {
-	PlanDate       string `json:"plan_date" binding:"required"`
-	RowNo          int    `json:"row_no" binding:"required"`
-	Value          *int   `json:"value,omitempty"`
-	CartonCount    *int   `json:"carton_count,omitempty"`
-	LooseQuantity  *int   `json:"loose_quantity,omitempty"`
-	LineCode       string `json:"line_code,omitempty"`
-	ProductCode    string `json:"product_code,omitempty"`
-	InputBy        string `json:"input_by" binding:"required"`
+	PlanDate      string `json:"plan_date" binding:"required"`
+	RowNo         int    `json:"row_no" binding:"required"`
+	Value         *int   `json:"value,omitempty"`
+	CartonCount   *int   `json:"carton_count,omitempty"`
+	LooseQuantity *int   `json:"loose_quantity,omitempty"`
+	LineCode      string `json:"line_code,omitempty"`
+	ProductCode   string `json:"product_code,omitempty"`
+	InputBy       string `json:"input_by" binding:"required"`
 }
 
 func (s *ReportService) createPlan(c *gin.Context) {
@@ -74,13 +77,13 @@ func (s *ReportService) createPlan(c *gin.Context) {
 	}
 
 	plan := &model.DailyProductionPlan{
-		PlanDate:       input.PlanDate,
-		RowNo:          input.RowNo,
-		Value:          input.Value,
-		CartonCount:    input.CartonCount,
-		LooseQuantity:  input.LooseQuantity,
-		LineCode:       input.LineCode,
-		InputBy:        input.InputBy,
+		PlanDate:      input.PlanDate,
+		RowNo:         input.RowNo,
+		Value:         input.Value,
+		CartonCount:   input.CartonCount,
+		LooseQuantity: input.LooseQuantity,
+		LineCode:      input.LineCode,
+		InputBy:       input.InputBy,
 	}
 
 	if model.CartonModeRows[input.RowNo] {
@@ -99,7 +102,7 @@ func (s *ReportService) createPlan(c *gin.Context) {
 		}
 		plan.UnitsPerCartonSnapshot = &spec.UnitsPerCarton
 		if plan.CartonCount != nil && plan.LooseQuantity != nil {
-			actual := *plan.CartonCount * spec.UnitsPerCarton + *plan.LooseQuantity
+			actual := *plan.CartonCount*spec.UnitsPerCarton + *plan.LooseQuantity
 			plan.ActualQuantity = &actual
 		}
 	}
@@ -108,6 +111,8 @@ func (s *ReportService) createPlan(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	_ = s.auditSvc.Record(c.Request.Context(), input.InputBy, "REPORT_INPUT", "DailyProductionPlan",
+		fmt.Sprintf("%s/row%d", input.PlanDate, input.RowNo), plan, false)
 	c.JSON(http.StatusOK, plan)
 }
 
@@ -158,7 +163,7 @@ func (s *ReportService) updatePlan(c *gin.Context) {
 		}
 		plan.UnitsPerCartonSnapshot = &spec.UnitsPerCarton
 		if plan.CartonCount != nil && plan.LooseQuantity != nil {
-			actual := *plan.CartonCount * spec.UnitsPerCarton + *plan.LooseQuantity
+			actual := *plan.CartonCount*spec.UnitsPerCarton + *plan.LooseQuantity
 			plan.ActualQuantity = &actual
 		}
 	}
@@ -166,6 +171,8 @@ func (s *ReportService) updatePlan(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	_ = s.auditSvc.Record(c.Request.Context(), input.InputBy, "REPORT_INPUT", "DailyProductionPlan",
+		fmt.Sprintf("%s/row%d", input.PlanDate, input.RowNo), plan, false)
 	c.JSON(http.StatusOK, plan)
 }
 
@@ -181,6 +188,8 @@ func (s *ReportService) deletePlan(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	_ = s.auditSvc.Record(c.Request.Context(), c.GetString("actor"), "REPORT_DELETE", "DailyProductionPlan",
+		fmt.Sprintf("id%d", id.ID), nil, false)
 	c.JSON(http.StatusOK, gin.H{"status": "deleted"})
 }
 
@@ -207,6 +216,8 @@ func (s *ReportService) createHoliday(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	_ = s.auditSvc.Record(c.Request.Context(), input.ConfigBy, "HOLIDAY_CONFIG", "HolidayCalendar",
+		input.HolidayDate, holiday, false)
 	c.JSON(http.StatusOK, holiday)
 }
 
@@ -241,6 +252,8 @@ func (s *ReportService) deleteHoliday(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	_ = s.auditSvc.Record(c.Request.Context(), c.GetString("actor"), "HOLIDAY_CONFIG", "HolidayCalendar",
+		fmt.Sprintf("id%d", id.ID), nil, false)
 	c.JSON(http.StatusOK, gin.H{"status": "deleted"})
 }
 
@@ -275,6 +288,8 @@ func (s *ReportService) createCartonSpec(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	_ = s.auditSvc.Record(c.Request.Context(), input.ConfigBy, "CARTON_SPEC_CONFIG", "CartonSpecification",
+		fmt.Sprintf("%s/%s/%d", input.LineCode, input.ProductCode, input.UnitsPerCarton), spec, false)
 	c.JSON(http.StatusOK, spec)
 }
 
@@ -313,6 +328,8 @@ func (s *ReportService) updateCartonSpec(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	_ = s.auditSvc.Record(c.Request.Context(), input.ConfigBy, "CARTON_SPEC_CONFIG", "CartonSpecification",
+		fmt.Sprintf("id%d", id.ID), spec, false)
 	c.JSON(http.StatusOK, spec)
 }
 
@@ -328,22 +345,24 @@ func (s *ReportService) deleteCartonSpec(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	_ = s.auditSvc.Record(c.Request.Context(), c.GetString("actor"), "CARTON_SPEC_CONFIG", "CartonSpecification",
+		fmt.Sprintf("id%d", id.ID), nil, false)
 	c.JSON(http.StatusOK, gin.H{"status": "deleted"})
 }
 
 type reportResponse struct {
-	Title       string             `json:"title"`
-	Dates       []string           `json:"dates"`
-	RowNames    []string           `json:"row_names"`
-	RowColors   []string           `json:"row_colors"`
-	Matrix      [][]*int           `json:"matrix"`
-	Cumulative  []int              `json:"cumulative"`
-	Holidays    map[string]string  `json:"holidays"`
-	Reference   *referenceData     `json:"reference,omitempty"`
+	Title      string            `json:"title"`
+	Dates      []string          `json:"dates"`
+	RowNames   []string          `json:"row_names"`
+	RowColors  []string          `json:"row_colors"`
+	Matrix     [][]*int          `json:"matrix"`
+	Cumulative []int             `json:"cumulative"`
+	Holidays   map[string]string `json:"holidays"`
+	Reference  *referenceData    `json:"reference,omitempty"`
 }
 
 type referenceData struct {
-	Description string            `json:"description"`
+	Description string                    `json:"description"`
 	PerDate     map[string]map[string]int `json:"per_date"`
 }
 
@@ -483,9 +502,9 @@ func (s *ReportService) buildReference(ctx context.Context, dates []string, line
 			Select("COALESCE(SUM(quantity), 0)").Scan(&sumQty)
 		if count > 0 {
 			ref.PerDate[date] = map[string]int{
-				"A_records":      int(count),
+				"A_records":         int(count),
 				"B_unique_barcodes": int(uniqueBc),
-				"D_sum_quantity":   int(sumQty),
+				"D_sum_quantity":    int(sumQty),
 			}
 		}
 	}
@@ -520,12 +539,42 @@ func (s *ReportService) exportReport(c *gin.Context) {
 	}
 
 	planMap := make(map[string]map[int]*model.DailyProductionPlan)
+	cartonAgg := make(map[int]*model.DailyProductionPlan)
 	for _, p := range plans {
 		d := normalizeDate(p.PlanDate)
 		if planMap[d] == nil {
 			planMap[d] = make(map[int]*model.DailyProductionPlan)
 		}
 		planMap[d][p.RowNo] = &p
+		if model.CartonModeRows[p.RowNo] {
+			if cartonAgg[p.RowNo] == nil {
+				cartonAgg[p.RowNo] = &model.DailyProductionPlan{RowNo: p.RowNo, UnitsPerCartonSnapshot: p.UnitsPerCartonSnapshot}
+			}
+			if p.CartonCount != nil {
+				v := 0
+				if cartonAgg[p.RowNo].CartonCount != nil {
+					v = *cartonAgg[p.RowNo].CartonCount
+				}
+				v += *p.CartonCount
+				cartonAgg[p.RowNo].CartonCount = &v
+			}
+			if p.LooseQuantity != nil {
+				v := 0
+				if cartonAgg[p.RowNo].LooseQuantity != nil {
+					v = *cartonAgg[p.RowNo].LooseQuantity
+				}
+				v += *p.LooseQuantity
+				cartonAgg[p.RowNo].LooseQuantity = &v
+			}
+			if p.ActualQuantity != nil {
+				v := 0
+				if cartonAgg[p.RowNo].ActualQuantity != nil {
+					v = *cartonAgg[p.RowNo].ActualQuantity
+				}
+				v += *p.ActualQuantity
+				cartonAgg[p.RowNo].ActualQuantity = &v
+			}
+		}
 	}
 
 	matrix := make([][]*int, 10)
@@ -569,6 +618,13 @@ func (s *ReportService) exportReport(c *gin.Context) {
 	axis, _ := excelize.CoordinatesToCellName(2, 1)
 	f.SetCellValue(sheet, axis, "累计数量")
 
+	auxCols := []string{"箱数", "装箱规格", "散件", "实际件数"}
+	auxBase := len(dates) + 3
+	for i, title := range auxCols {
+		cell, _ := excelize.CoordinatesToCellName(auxBase+i, 1)
+		f.SetCellValue(sheet, cell, title)
+	}
+
 	for colIdx, date := range dates {
 		cell, _ := excelize.CoordinatesToCellName(colIdx+2, 1)
 		f.SetCellValue(sheet, cell, date)
@@ -604,11 +660,33 @@ func (s *ReportService) exportReport(c *gin.Context) {
 			}
 		}
 		f.SetCellValue(sheet, cumCell, sum)
+
+		rowNo := rowIdx + 1
+		if agg, ok := cartonAgg[rowNo]; ok {
+			if agg.CartonCount != nil {
+				cell, _ := excelize.CoordinatesToCellName(auxBase, rowIdx+2)
+				f.SetCellValue(sheet, cell, *agg.CartonCount)
+			}
+			if agg.UnitsPerCartonSnapshot != nil {
+				cell, _ := excelize.CoordinatesToCellName(auxBase+1, rowIdx+2)
+				f.SetCellValue(sheet, cell, *agg.UnitsPerCartonSnapshot)
+			}
+			if agg.LooseQuantity != nil {
+				cell, _ := excelize.CoordinatesToCellName(auxBase+2, rowIdx+2)
+				f.SetCellValue(sheet, cell, *agg.LooseQuantity)
+			}
+			if agg.ActualQuantity != nil {
+				cell, _ := excelize.CoordinatesToCellName(auxBase+3, rowIdx+2)
+				f.SetCellValue(sheet, cell, *agg.ActualQuantity)
+			}
+		}
 	}
 
 	filename := fmt.Sprintf("102_daily_output_plan_%s_to_%s.xlsx", startDate, endDate)
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
 	c.Header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	_ = s.auditSvc.Record(c.Request.Context(), c.GetString("actor"), "REPORT_EXPORT", "Report",
+		fmt.Sprintf("%s~%s", startDate, endDate), gin.H{"filename": filename}, false)
 	if err := f.Write(c.Writer); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

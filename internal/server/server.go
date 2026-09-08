@@ -33,7 +33,7 @@ func New(cfg *config.Config, adapterReg *adapters.Registry, db *gorm.DB) *Server
 	statsSvc := NewStatisticsService(db, recordRepo, lineRepo, cfg.Shadow.Enabled && cfg.Shadow.StatisticsShadow, cfg.Shadow.QuantityLabel)
 	agentSvc := NewAgentService(db, auditSvc)
 	healthSvc := NewHealthService(db)
-	reportSvc := NewReportService(db)
+	reportSvc := NewReportService(db, auditSvc)
 	return &Server{cfg: cfg, adapterReg: adapterReg, authMW: authMW, lineSvc: lineSvc, srcSvc: srcSvc, statsSvc: statsSvc, agentSvc: agentSvc, healthSvc: healthSvc, reportSvc: reportSvc}
 }
 
