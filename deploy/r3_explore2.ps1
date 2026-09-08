@@ -1,0 +1,112 @@
+﻿$pw = (Get-Content "C:\Users\DELL\IDEProjects\HWView\deploy\.sshpw" -Raw).Trim()
+$plink = "C:\Program Files\PuTTY\plink.exe"
+$pscp = "C:\Program Files\PuTTY\pscp.exe"
+$target = "debian@192.168.2.110"
+$hostkey = "SHA256:C20ScxLx9sNJUXiw0vSsEC2w7aQ1K3J98FHaeJN2q14"
+
+$script = @'
+#!/bin/bash
+endpoints=(
+  "/Cron/Printload/"
+  "/Cron/Printload/lists"
+  "/Cron/Print/"
+  "/Cron/Print/lists"
+  "/Cron/Label/"
+  "/Cron/Label/lists"
+  "/Cron/Box/"
+  "/Cron/Box/lists"
+  "/Cron/Package/"
+  "/Cron/Package/lists"
+  "/Cron/Inspection/"
+  "/Cron/Inspection/lists"
+  "/Cron/Quality/"
+  "/Cron/Quality/lists"
+  "/Cron/Check/"
+  "/Cron/Check/lists"
+  "/Cron/Test/"
+  "/Cron/Test/lists"
+  "/Cron/Order/"
+  "/Cron/Order/lists"
+  "/Cron/Task/"
+  "/Cron/Task/lists"
+  "/Cron/Plan/"
+  "/Cron/Plan/lists"
+  "/Cron/Schedule/"
+  "/Cron/Schedule/lists"
+  "/Cron/Shift/"
+  "/Cron/Shift/lists"
+  "/Cron/Line/"
+  "/Cron/Line/lists"
+  "/Cron/Machine/"
+  "/Cron/Machine/lists"
+  "/Cron/Device/"
+  "/Cron/Device/lists"
+  "/Cron/Work/"
+  "/Cron/Work/lists"
+  "/Cron/Worker/"
+  "/Cron/Worker/lists"
+  "/Cron/Operator/"
+  "/Cron/Operator/lists"
+  "/Cron/Process/"
+  "/Cron/Process/lists"
+  "/Cron/Step/"
+  "/Cron/Step/lists"
+  "/Cron/Record/"
+  "/Cron/Record/lists"
+  "/Cron/Log/"
+  "/Cron/Log/lists"
+  "/Cron/History/"
+  "/Cron/History/lists"
+  "/Cron/Trace/"
+  "/Cron/Trace/lists"
+  "/Cron/Track/"
+  "/Cron/Track/lists"
+  "/Cron/Tracking/"
+  "/Cron/Tracking/lists"
+  "/Cron/Inventory/"
+  "/Cron/Inventory/lists"
+  "/Cron/Material/"
+  "/Cron/Material/lists"
+  "/Cron/Jili/printload"
+  "/Cron/Jili/printload/id/146978"
+  "/Cron/Jili/detail/id/146978"
+  "/Cron/Jili/view/id/146978"
+  "/Cron/Jili/info/id/146978"
+  "/Cron/Jili/show/id/146978"
+  "/Cron/Jili/get/id/146978"
+  "/Cron/Jili/read/id/146978"
+  "/Cron/Jili/total"
+  "/Cron/Jili/summary"
+  "/Cron/Jili/stat"
+  "/Cron/Jili/count"
+  "/Cron/Jili/export"
+  "/Cron/Jili/report"
+  "/Cron/Jili/analysis"
+  "/Cron/Jili/dashboard"
+  "/Cron/Jili/overview"
+  "/Cron/Jili/monitor"
+  "/Cron/Jili/status"
+  "/Cron/Jili/health"
+)
+for ep in "${endpoints[@]}"; do
+  url="http://192.168.30.2:86${ep}"
+  code=$(curl -s -o /dev/null -w '%{http_code}' "$url" 2>/dev/null)
+  size=$(curl -s -o /dev/null -w '%{size_download}' "$url" 2>/dev/null)
+  if [ "$code" != "404" ]; then
+    echo "*** FOUND: ${ep}: HTTP ${code}, ${size} bytes ***"
+  else
+    echo "${ep}: ${code}"
+  fi
+done
+echo "--- Done ---"
+'@
+
+$script = $script -replace "`r`n", "`n"
+
+$tmpFile = [System.IO.Path]::GetTempFileName()
+[System.IO.File]::WriteAllText($tmpFile, $script, [System.Text.UTF8Encoding]::new($false))
+
+& $pscp -pw $pw -batch -hostkey $hostkey $tmpFile "${target}:/tmp/r3_explore2.sh"
+& $plink -ssh -pw $pw -batch -hostkey $hostkey $target "bash /tmp/r3_explore2.sh"
+
+Remove-Item $tmpFile -Force

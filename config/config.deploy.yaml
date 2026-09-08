@@ -1,0 +1,29 @@
+server:
+  host: "0.0.0.0"
+  port: "8080"
+  mode: "release"
+
+database:
+  driver: "sqlite"
+  dsn: "/opt/hwview/data/hwview.db"
+
+collector:
+  collection_interval: "5m"
+  agent_heartbeat_timeout: "60s"
+  ip_switch_timeout: "30s"
+  dashboard_polling_interval: "10s"
+
+health:
+  consecutive_failures_threshold: 3
+  offline_threshold: 10
+
+auth:
+  enabled: false
+  admin_key: "hwview-shadow-deploy"
+
+shadow:
+  enabled: true
+  collector_shadow: true
+  statistics_shadow: true
+  quantity_frozen: true
+  quantity_label: "pending business confirmation"

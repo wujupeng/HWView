@@ -1,0 +1,32 @@
+# SSH secrets
+deploy/.sshpw
+
+# Build artifacts
+bin/
+
+# Go
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Node
+web/node_modules/
+web/dist/
+
+# Database
+*.db
+*.db-journal
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp
+*.tmp
+*.log

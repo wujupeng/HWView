@@ -1,0 +1,1 @@
+INSERT INTO TBL_PRODUCTION_LINE (line_code, line_name, customer, product, adapter_type, enabled, status, created_at, updated_at) VALUES ('HW102-COPY', 'Huawei102-Copy-Line', 'Huawei', 'HW102', 'Huawei102Adapter', 1, 'CONFIGURED', datetime('now'), datetime('now'));

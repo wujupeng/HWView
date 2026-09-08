@@ -1,0 +1,24 @@
+[Unit]
+Description=HWView Server - Multi-Line Production Data Platform
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=debian
+Group=debian
+WorkingDirectory=/opt/hwview
+ExecStart=/opt/hwview/bin/hwview-server
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+
+Environment=HWVIEW_CONFIG=/opt/hwview/config/config.yaml
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hwview-server
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,1 @@
+INSERT INTO TBL_DATA_SOURCE (line_id, agent_id, hostname, current_ip, port, base_path, enabled, status, created_at, updated_at) VALUES (2, 'HW102-AGENT-01', 'huawei102-host', '192.168.30.2', 86, '/Cron/Jili/lists/', 1, 'OFFLINE', datetime('now'), datetime('now'));
