@@ -2,11 +2,15 @@
 
 > 文档定位：本文件将 spec.md 的需求规格与 design.md 的技术设计分解为可执行、可验收的编码任务清单。
 > 阶段：第三阶段编码任务规划（Spec-Driven Development）
-> 上游规格：`.codeartsdoer/specs/hwview_platform/spec.md`（18 章，1286 行，含 §18 EV1-R4 导出报表需求）
-> 上游设计：`.codeartsdoer/specs/hwview_platform/design.md`（含 §1-§2 EV1 主链 + §3 导出报表增量设计 §3.1-§3.10，2741 行）
-> 设计基线：EV1 设计基线（AUTHORIZED）+ 9 项 TASK-HWV-EV1-001~009 + Golden Evidence（433/5395/Q0926-078）+ EV1 红线 8 项 + EV1-R4 报表增量（5 主任务 / 28 子任务）+ R4 红线 11 项
+> 上游规格：`.codeartsdoer/specs/hwview_platform/spec.md`（18 章，1425 行，含 §16.4 R2-AMENDMENT + §18 EV1-R4 导出报表需求 + R4-BLOCKER-01/02 修正）
+> 上游设计：`.codeartsdoer/specs/hwview_platform/design.md`（含 §1-§2 EV1 主链 + §3 导出报表增量设计 §3.1-§3.10，3118 行，含 R2-AMENDMENT + R4-BLOCKER-01/02 修正）
+> 设计基线：EV1 设计基线（AUTHORIZED）+ 9 项 TASK-HWV-EV1-001~009 + Golden Evidence（433/5395/Q0926-078）+ EV1 红线 8 项 + EV1-R4 报表增量（5 主任务 / 35 子任务）+ R4 红线 11 项 + R4-BLOCKER-01 装箱规格三维适用范围 + R4-BLOCKER-02 实际完成合计公式修正
 > 命名规范：任务 ID 大写连字符（TASK-HWV-EV1-XXX-NN / TASK-HWV-EV1-R4-XXX-NN）；文件名 snake_case；表名 TBL_ 前缀大写下划线；项目命名大写连字符（HWView-EV1）
 > 技术栈：后端 Go + Gin + goquery + Viper + slog + excelize（R4 Excel 导出）；前端 React 18 + TypeScript(Strict) + Vite + React Query + Recharts；数据库 SQLite/PostgreSQL
+> **修订记录**：
+> - 2026-09-08 R2-AMENDMENT 任务同步更新：基于 spec.md §16.4 + design.md §3.3.4/§3.4.4 R2-AMENDMENT 设计，新增 TBL_CARTON_SPECIFICATION 表迁移 + CartonSpecRepo 仓储 + 装箱规格配置接口 + actual_quantity 公式计算任务。追溯：spec.md §16.4 / §18.7.4 / §18.7.5 / §18.10。
+> - 2026-09-08 R4-BLOCKER-01 修正任务同步更新：TBL_CARTON_SPECIFICATION 必须支持三维适用范围（product_code + line_code + effective_from/effective_to），30 与 60 可并存；CartonSpecRepo 新增按 (product_code, line_code, date) 三维查询方法；新增三维查询测试（30 与 60 并存场景）。追溯：spec.md §18.7.4 第 10/11 项 / §18.2.4 第 2 项 / §18.10 / design.md §3.3.4 / §3.4.4。
+> - 2026-09-08 R4-BLOCKER-02 修正任务同步更新：报表行6 实际完成合计公式由"行2+3+4+5"修正为"行2+3+5"（行4 为"目标数量新线"TARGET，不参与实际完成合计）；行5 由"实际完成数量（新线夜班）"修正为"实际完成数量（新线）"（新线不再区分白/夜班）；行4 标注 TARGET 绿色背景；新增合计公式验证测试。追溯：spec.md §18.2.2 / §18.4.1 第 2/4/5 项 / §18.7.5 第 3/9 项 / §18.10 / design.md §3.4.5 / §3.5.2 / §3.5.4 / §3.7.2 / §3.9。
 
 ---
 
@@ -118,34 +122,41 @@ package "EV1-R4 报表数据库层" as R4DB {
   [R4-001-04 PlanRepo CRUD] as R4D4
   [R4-001-05 HolidayRepo CRUD] as R4D5
   [R4-001-06 仓储单元测试] as R4D6
+  [R4-001-07 TBL_CARTON_SPECIFICATION\n(R2-AMENDMENT+R4-BLOCKER-01)] as R4D7
+  [R4-001-08 CartonSpecRepo 三维查询\n(R4-BLOCKER-01)] as R4D8
+  [R4-001-09 CartonSpec 仓储单测\n(R4-BLOCKER-01 30/60 并存)] as R4D9
 }
 
 package "EV1-R4 报表后端服务" as R4BE {
   [R4-002-01 角色权限扩展] as R4B1
   [R4-002-02 report_service 聚合] as R4B2
-  [R4-002-03 自动计算行+累计列] as R4B3
+  [R4-002-03 自动计算行+累计列\n(R4-BLOCKER-02 行6=2+3+5)] as R4B3
   [R4-002-04 标签补打参考聚合] as R4B4
   [R4-002-05 excelize 依赖] as R4B5
   [R4-002-06 excel_exporter] as R4B6
   [R4-002-07 REST API+路由] as R4B7
   [R4-002-08 service 单测] as R4B8
   [R4-002-09 exporter 单测] as R4B9
+  [R4-002-10 装箱规格配置接口\n(R2-AMENDMENT+R4-BLOCKER-01 三维)] as R4B10
 }
 
 package "EV1-R4 报表前端" as R4FE {
   [R4-003-01 路由+类型+权限] as R4F1
   [R4-003-02 React Query hooks] as R4F2
-  [R4-003-03 报表预览页] as R4F3
-  [R4-003-04 人工录入表单] as R4F4
+  [R4-003-03 报表预览页\n(R4-BLOCKER-02 行4 TARGET)] as R4F3
+  [R4-003-04 人工录入表单\n(R4-BLOCKER-02 行5 新线)] as R4F4
   [R4-003-05 节假日配置页] as R4F5
   [R4-003-06 导出按钮+下载] as R4F6
+  [R4-003-07 装箱规格配置页\n(R2-AMENDMENT+R4-BLOCKER-01)] as R4F7
 }
 
 package "EV1-R4 测试与验证" as R4TV {
   [R4-004-01 API 集成测试] as R4T1
-  [R4-004-02 业务台账基准校验] as R4T2
+  [R4-004-02 业务台账基准校验\n(R4-BLOCKER-02 公式修正)] as R4T2
   [R4-004-03 数据分离红线核对] as R4T3
   [R4-004-04 端到端一致性] as R4T4
+  [R4-004-05 三维查询测试\n(R4-BLOCKER-01 30/60 并存)] as R4T5
+  [R4-004-06 合计公式验证测试\n(R4-BLOCKER-02 行6=2+3+5)] as R4T6
 }
 
 package "EV1-R4 部署与 Gate" as R4DG {
@@ -260,17 +271,22 @@ TE3 --> TE2
 ' R4 数据库层依赖
 R4D1 --> T0003
 R4D2 --> T0003
+R4D7 --> T0003
 R4D3 --> R4D1
 R4D3 --> R4D2
+R4D3 --> R4D7
 R4D4 --> R4D1
 R4D5 --> R4D2
+R4D8 --> R4D7
 R4D6 --> R4D4
 R4D6 --> R4D5
+R4D9 --> R4D8
 
 ' R4 后端服务依赖
 R4B1 --> T0001
 R4B2 --> R4D4
 R4B2 --> R4D5
+R4B2 --> R4D8
 R4B3 --> R4B2
 R4B4 --> T0072
 R4B4 --> R4B2
@@ -280,7 +296,10 @@ R4B6 --> R4B3
 R4B7 --> R4B2
 R4B7 --> R4B6
 R4B7 --> R4B1
+R4B10 --> R4D8
+R4B10 --> R4B1
 R4B8 --> R4B7
+R4B8 --> R4B10
 R4B9 --> R4B6
 
 ' R4 前端依赖
@@ -295,6 +314,8 @@ R4F5 --> R4F2
 R4F5 --> R4B7
 R4F6 --> R4F3
 R4F6 --> R4B7
+R4F7 --> R4F2
+R4F7 --> R4B10
 
 ' R4 测试依赖
 R4T1 --> R4B7
@@ -304,13 +325,21 @@ R4T2 --> R4B9
 R4T3 --> R4B2
 R4T4 --> R4F6
 R4T4 --> R4T1
+R4T5 --> R4D9
+R4T5 --> R4B10
+R4T6 --> R4B8
+R4T6 --> R4T2
 
 ' R4 部署与 Gate 依赖
 R4G1 --> TP3
 R4G1 --> R4T4
+R4G1 --> R4T5
+R4G1 --> R4T6
 R4G2 --> R4G1
 R4G2 --> R4T2
 R4G2 --> R4T3
+R4G2 --> R4T5
+R4G2 --> R4T6
 R4G3 --> R4G2
 
 ' 测试依赖
@@ -361,10 +390,10 @@ TG4 --> TG3
   EV2-01→EV2-02→EV2-03
    ↓
 [阶段 2.5 EV1-R4 报表增量]（EV1 主链 + EV2 + Deploy 完成后启动）
-  R4-001-01∥R4-001-02 → R4-001-03 → R4-001-04∥R4-001-05 → R4-001-06
-  → R4-002-01 → R4-002-02 → R4-002-03∥R4-002-04 → R4-002-05 → R4-002-06 → R4-002-07 → R4-002-08∥R4-002-09
-  → R4-003-01 → R4-003-02 → R4-003-03 → R4-003-04∥R4-003-05 → R4-003-06
-  → R4-004-01∥R4-004-02∥R4-004-03 → R4-004-04
+  R4-001-01∥R4-001-02∥R4-001-07 → R4-001-03 → R4-001-04∥R4-001-05∥R4-001-08 → R4-001-06∥R4-001-09
+  → R4-002-01 → R4-002-02 → R4-002-03∥R4-002-04 → R4-002-05 → R4-002-06 → R4-002-07 → R4-002-10 → R4-002-08∥R4-002-09
+  → R4-003-01 → R4-003-02 → R4-003-03 → R4-003-04∥R4-003-05∥R4-003-07 → R4-003-06
+  → R4-004-01∥R4-004-02∥R4-004-03∥R4-004-05∥R4-004-06 → R4-004-04
   → R4-005-01 → R4-005-02 → R4-005-03
    ↓
 [阶段 3 测试与验证] TEST-01→TEST-02→TEST-03→TEST-04
@@ -378,7 +407,7 @@ TG4 --> TG3
 - 阶段 0：000-01（Go）与 000-02（前端）与 000-03（DB 脚本）三者可并行
 - 阶段 2：Dashboard、Deploy、EV2 接口预定义三组可并行
 - 009 Health Monitor 与 008 Scheduler 在 007 完成后可适度并行（008-02 依赖 009-02）
-- 阶段 2.5 R4：R4-001-01∥R4-001-02（两表迁移可并行）；R4-001-04∥R4-001-05（两仓储可并行）；R4-002-03∥R4-002-04（自动计算与参考聚合可并行）；R4-002-08∥R4-002-09（service 与 exporter 单测可并行）；R4-003-04∥R4-003-05（录入表单与节假日配置可并行）；R4-004-01∥R4-004-02∥R4-004-03（三类测试可并行）
+- 阶段 2.5 R4：R4-001-01∥R4-001-02∥R4-001-07（三表迁移可并行）；R4-001-04∥R4-001-05∥R4-001-08（三仓储可并行）；R4-001-06∥R4-001-09（PlanRepo/HolidayRepo 单测与 CartonSpecRepo 单测可并行）；R4-002-03∥R4-002-04（自动计算与参考聚合可并行）；R4-002-08∥R4-002-09（service 与 exporter 单测可并行）；R4-003-04∥R4-003-05∥R4-003-07（录入表单/节假日配置/装箱规格配置可并行）；R4-004-01∥R4-004-02∥R4-004-03∥R4-004-05∥R4-004-06（五类测试可并行）
 
 ---
 
@@ -1198,23 +1227,26 @@ TG4 --> TG3
 > 命名约束：报表命名"102日产出计划报表"，禁含"生产数量"字样；表名 TBL_ 前缀大写下划线（PREFERENCE_17）。
 > 数据分离红线：核心 10 行仅来自人工录入（TBL_DAILY_PRODUCTION_PLAN），标签补打数据（A/B/D）仅入参考区域，禁止进入核心行（R2/FROZEN 约束）。
 
-### 14.1 TASK-HWV-EV1-R4-001 数据库层（2 张新表 + 仓储）
+### 14.1 TASK-HWV-EV1-R4-001 数据库层（3 张新表 + 仓储）
+
+> 含 R2-AMENDMENT 新增 TBL_CARTON_SPECIFICATION 装箱规格配置表（R4-BLOCKER-01 强化三维适用范围）。
 
 #### 14.1.1 TASK-HWV-EV1-R4-001-01 TBL_DAILY_PRODUCTION_PLAN 表迁移 + model
 
-- [ ] **任务描述**：编写 `TBL_DAILY_PRODUCTION_PLAN` 表迁移与 GORM model 定义，存储人工录入的核心 10 行数据（行6/行9 不存储，由系统计算）
+- [ ] **任务描述**：编写 `TBL_DAILY_PRODUCTION_PLAN` 表迁移与 GORM model 定义，存储人工录入的核心 10 行数据（行6/行9 不存储，由系统计算），含 R2-AMENDMENT 箱数换算字段（carton_count/units_per_carton_snapshot/loose_quantity/actual_quantity，仅行2/行3/行5 使用）
 - [ ] **输入依赖**：TASK-HWV-EV1-000-03（数据库初始化脚本）
 - [ ] **输出产物**：
-  - `pkg/model/daily_production_plan.go`（领域对象 DailyProductionPlan，字段 ID/PlanDate/RowNo/Value/LineCode/InputBy/InputAt/UpdatedAt）
+  - `pkg/model/daily_production_plan.go`（领域对象 DailyProductionPlan，字段 ID/PlanDate/RowNo/Value/CartonCount/UnitsPerCartonSnapshot/LooseQuantity/ActualQuantity/LineCode/ProductCode/InputBy/InputAt/UpdatedAt）
   - `internal/store/migration/daily_production_plan.go`（迁移注册）
 - [ ] **验收标准**：
-  1. 表结构与 design.md §3.3.2 DDL 一致：`id BIGINT PK AUTOINCREMENT` / `plan_date DATE NOT NULL` / `row_no INT NOT NULL CHECK 1-10` / `value INT NULL` / `line_code VARCHAR(64) NOT NULL DEFAULT 'HW102'` / `input_by VARCHAR(128) NOT NULL` / `input_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP` / `updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`
+  1. 表结构与 design.md §3.3.2 DDL 一致：`id BIGINT PK AUTOINCREMENT` / `plan_date DATE NOT NULL` / `row_no INT NOT NULL CHECK 1-10` / `value INT NULL` / `carton_count INT NULL`（R2-AMENDMENT，行2/3/5 整箱数）/ `units_per_carton_snapshot INT NULL`（R2-AMENDMENT，从 TBL_CARTON_SPECIFICATION 读取并冻结为快照）/ `loose_quantity INT NULL`（R2-AMENDMENT，散件数）/ `actual_quantity INT NULL`（R2-AMENDMENT，AUTO_CALC = carton_count × units_per_carton_snapshot + loose_quantity）/ `line_code VARCHAR(64) NOT NULL DEFAULT 'HW102'` / `product_code VARCHAR(64) NULL`（R2-AMENDMENT，行2/3/5 关联装箱规格三维查询维度之一）/ `input_by VARCHAR(128) NOT NULL` / `input_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP` / `updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`
   2. 唯一索引 `UQ_PLAN_DATE_ROW_LINE (plan_date, row_no, line_code)` 创建（spec.md §18.4.2 第 3 项录入覆盖规则）
-  3. 辅助索引 `IDX_PLAN_DATE` / `IDX_PLAN_LINE_DATE` / `IDX_PLAN_ROW` 创建
+  3. 辅助索引 `IDX_PLAN_DATE` / `IDX_PLAN_LINE_DATE` / `IDX_PLAN_ROW` / `IDX_PLAN_PRODUCT_LINE_DATE (product_code, line_code, plan_date)`（R2-AMENDMENT 三维查询辅助）创建
   4. GORM struct tag 声明 `gorm:"uniqueIndex:uq_plan_date_row_line,priority:1"` 等
   5. 表名常量 `TBL_DAILY_PRODUCTION_PLAN` 符合 TBL_ 前缀大写下划线规范（spec.md §18.9.3 第 2 项 + PREFERENCE_17）
-  6. value 字段为 `*int`（可空，未录入时 NULL，spec.md §18.7.1 第 3 项）
-- [ ] **对应条款**：design.md 3.3.2 / 3.8.1；spec.md 18.7.1 / 18.9.3
+  6. value/carton_count/units_per_carton_snapshot/loose_quantity/actual_quantity 字段均为 `*int`（可空，未录入或非箱数换算行时 NULL，spec.md §18.7.1 第 3 项 + §18.7.5）
+  7. **R2-AMENDMENT 行4 不涉及箱数换算约束**：行4（目标数量新线 TARGET）仅使用 value 字段，carton_count/units_per_carton_snapshot/loose_quantity/actual_quantity 均为 NULL（spec.md §18.7.5 第 9 项 + R4-BLOCKER-02）
+- [ ] **对应条款**：design.md 3.3.2 / 3.8.1；spec.md 18.7.1 / 18.7.5 / 18.9.3
 
 #### 14.1.2 TASK-HWV-EV1-R4-001-02 TBL_HOLIDAY_CALENDAR 表迁移 + model
 
@@ -1233,21 +1265,21 @@ TG4 --> TG3
 
 #### 14.1.3 TASK-HWV-EV1-R4-001-03 GORM AutoMigrate 集成
 
-- [ ] **任务描述**：将新增 2 张表纳入 `internal/store/migration/migration.go` 统一迁移函数，与现有 7 张表共用同一 AutoMigrate 入口
-- [ ] **输入依赖**：TASK-HWV-EV1-R4-001-01、TASK-HWV-EV1-R4-001-02
+- [ ] **任务描述**：将新增 3 张表（TBL_DAILY_PRODUCTION_PLAN / TBL_HOLIDAY_CALENDAR / TBL_CARTON_SPECIFICATION）纳入 `internal/store/migration/migration.go` 统一迁移函数，与现有 7 张表共用同一 AutoMigrate 入口
+- [ ] **输入依赖**：TASK-HWV-EV1-R4-001-01、TASK-HWV-EV1-R4-001-02、TASK-HWV-EV1-R4-001-07
 - [ ] **输出产物**：`internal/store/migration/migration.go`（追加注册）
 - [ ] **验收标准**：
-  1. 迁移顺序：先现有 7 张表（保持 EV1 依赖顺序，design.md §2.3.2），后新增 2 张表（无外键依赖，顺序无约束，design.md §3.3.5）
-  2. 调用 `db.AutoMigrate(&DailyProductionPlan{}, &HolidayCalendar{})` 一次性建表
-  3. SQLite 与 PostgreSQL 兼容：DDL 采用标准类型（BIGINT/DATE/TIMESTAMP/BOOLEAN/VARCHAR），避免方言差异
-  4. 部署时一次性建表，不修改已有 7 张表 DDL（design.md §3.3.5 协调策略）
+  1. 迁移顺序（design.md §3.3.6 + §3.8.3）：先现有 7 张表（保持 EV1 依赖顺序，design.md §2.3.2），后新增 3 张表，顺序为 `TBL_CARTON_SPECIFICATION` → `TBL_DAILY_PRODUCTION_PLAN` → `TBL_HOLIDAY_CALENDAR`（配置表优先于 DailyProductionPlan，因后者录入时需读取前者配置；HolidayCalendar 无依赖）
+  2. 调用 `db.AutoMigrate(&CartonSpecification{}, &DailyProductionPlan{}, &HolidayCalendar{})` 一次性建表
+  3. SQLite 与 PostgreSQL 兼容：DDL 采用标准类型（BIGINT/DATE/TIMESTAMP/BOOLEAN/VARCHAR/INT），避免方言差异；CHECK 约束在两方言下均支持
+  4. 部署时一次性建表，不修改已有 7 张表 DDL（design.md §3.3.6 协调策略）
   5. 迁移幂等：重复执行不报错、不丢数据
-- [ ] **对应条款**：design.md 3.3.5 / 3.8.3；spec.md 18.9.3
+- [ ] **对应条款**：design.md 3.3.6 / 3.8.3；spec.md 18.9.3
 
 #### 14.1.4 TASK-HWV-EV1-R4-001-04 DailyProductionPlanRepo CRUD 仓储
 
-- [ ] **任务描述**：实现 `DailyProductionPlanRepo` 仓储，提供按"日期 × 行号 × 产线"粒度的 CRUD 与批量查询，支持 UPSERT 覆盖更新
-- [ ] **输入依赖**：TASK-HWV-EV1-R4-001-01
+- [ ] **任务描述**：实现 `DailyProductionPlanRepo` 仓储，提供按"日期 × 行号 × 产线"粒度的 CRUD 与批量查询，支持 UPSERT 覆盖更新；含 R2-AMENDMENT 箱数换算字段（carton_count/units_per_carton_snapshot/loose_quantity/actual_quantity）处理
+- [ ] **输入依赖**：TASK-HWV-EV1-R4-001-01、TASK-HWV-EV1-R4-001-08（CartonSpecRepo，用于行2/3/5 录入时三维查询 units_per_carton 并写入 snapshot）
 - [ ] **输出产物**：`internal/store/daily_production_plan_repo.go`
 - [ ] **验收标准**：
   1. 方法签名：`CreateOrUpdate(ctx, *DailyProductionPlan) error`（UPSERT，UNIQUE(plan_date, row_no, line_code) 兜底，spec.md §18.4.2 第 3 项录入覆盖规则）
@@ -1256,9 +1288,17 @@ TG4 --> TG3
   4. `DeleteByID(ctx, id) error`
   5. `BatchCreateOrUpdate(ctx, []DailyProductionPlan) error`（事务批量录入，spec.md §18.4.2 第 2 项录入粒度）
   6. **行号可录入性约束**：写入前校验 `row_no ∉ {6, 9}`，拒绝并返回 `ErrAutoCalcRowNotWritable`（spec.md §18.7.1 第 6 项 + §18.4.2 第 4 项禁止项）
-  7. **非负约束**：value 非 nil 时校验 `*value >= 0`，拒绝负数（spec.md §18.7.1 第 3 项）
-  8. 错误码采用 HTK-E- 前缀结构化（PREFERENCE_2）
-- [ ] **对应条款**：design.md 3.3.2 / 3.4.2；spec.md 18.4.2 / 18.7.1
+  7. **非负约束**：value/carton_count/loose_quantity/actual_quantity 非 nil 时校验 `>= 0`，拒绝负数（spec.md §18.7.1 第 3 项 + §18.7.5）
+  8. **R2-AMENDMENT actual_quantity 自动计算约束**（spec.md §18.7.5 第 7/8 项）：
+     - 当 row_no ∈ {2, 3, 5} 且 carton_count 与 loose_quantity 非 nil 时：
+       - 调用 `CartonSpecRepo.GetEffectiveSpec(line_code, product_code, plan_date)` 三维查询获取 units_per_carton（R4-BLOCKER-01，spec.md §18.7.4 第 !0 项）
+       - 写入 `units_per_carton_snapshot = 查询结果`（冻结快照，design.md §3.3.6 协调策略）
+       - 自动计算并写入 `actual_quantity = carton_count × units_per_carton_snapshot + loose_quantity`
+       - 拒绝请求体含 actual_quantity 字段（返回 422 Unprocessable Entity，spec.md §18.7.5 第 8 项）
+     - 当 row_no ∈ {1, 4, 7, 8, 10}（TARGET 或传统录入行）时：carton_count/units_per_carton_snapshot/loose_quantity/actual_quantity 均置 NULL，仅使用 value 字段
+  9. **R4-BLOCKER-02 行4 TARGET 约束**：row_no=4（目标数量新线）仅写入 value 字段，禁止写入 carton_count 等箱数换算字段（spec.md §18.7.5 第 9 项）
+  10. 错误码采用 HTK-E- 前缀结构化（PREFERENCE_2）
+- [ ] **对应条款**：design.md 3.3.2 / 3.4.2 / 3.8.1；spec.md 18.4.2 / 18.7.1 / 18.7.5
 
 #### 14.1.5 TASK-HWV-EV1-R4-001-05 HolidayRepo CRUD 仓储
 
@@ -1277,11 +1317,11 @@ TG4 --> TG3
 
 #### 14.1.6 TASK-HWV-EV1-R4-001-06 仓储单元测试
 
-- [ ] **任务描述**：为 `DailyProductionPlanRepo` 与 `HolidayRepo` 编写单元测试，覆盖 CRUD + 约束 + 边界
+- [ ] **任务描述**：为 `DailyProductionPlanRepo` 与 `HolidayRepo` 编写单元测试，覆盖 CRUD + 约束 + 边界 + R2-AMENDMENT 箱数换算字段处理
 - [ ] **输入依赖**：TASK-HWV-EV1-R4-001-04、TASK-HWV-EV1-R4-001-05
 - [ ] **输出产物**：`internal/store/daily_production_plan_repo_test.go`、`internal/store/holiday_repo_test.go`
 - [ ] **验收标准**：
-  1. DailyProductionPlanRepo 测试用例 ≥8 条：
+  1. DailyProductionPlanRepo 测试用例 ≥12 条：
      - 正常录入（行1/2/3/4/5/7/8/10）
      - 行6 录入拒绝（返回 ErrAutoCalcRowNotWritable）
      - 行9 录入拒绝
@@ -1290,6 +1330,10 @@ TG4 --> TG3
      - 同日期同行同产线 UPSERT 覆盖（旧值被新值替换）
      - 批量录入事务回滚（部分失败全回滚）
      - ListByDateRange 返回正确范围
+     - **R2-AMENDMENT 行2/3/5 箱数换算**：录入 carton_count=17 + loose_quantity=9 + product_code + line_code，自动从 CartonSpecRepo 三维查询获取 units_per_carton_snapshot，actual_quantity 自动计算（spec.md §18.7.5 第 7/8 项）
+     - **R2-AMENDMENT actual_quantity 拒绝人工录入**：请求体含 actual_quantity 字段返回 422（spec.md §18.7.5 第 8 项）
+     - **R4-BLOCKER-02 行4 TARGET**：row_no=4 录入 carton_count 字段拒绝（行4 为目标数量不涉及箱数换算，spec.md §18.7.5 第 9 项）
+     - **R2-AMENDMENT 行1/4/7/8/10 传统录入**：carton_count/units_per_carton_snapshot/loose_quantity/actual_quantity 均置 NULL，仅 value 生效
   2. HolidayRepo 测试用例 ≥5 条：
      - 正常 UPSERT（新增）
      - 同日期 UPSERT 覆盖（更新 holiday_name/is_rest）
@@ -1298,7 +1342,74 @@ TG4 --> TG3
      - DeleteByDate 删除后 GetByDate 返回 NotFound
   3. 测试使用 SQLite 内存数据库 `:memory:`，无外部依赖
   4. `go test ./internal/store/... -v -cover` 全部通过
-- [ ] **对应条款**：design.md 3.3.2 / 3.3.3；spec.md 18.7.1 / 18.7.2
+- [ ] **对应条款**：design.md 3.3.2 / 3.3.3；spec.md 18.7.1 / 18.7.2 / 18.7.5
+
+#### 14.1.7 TASK-HWV-EV1-R4-001-07 TBL_CARTON_SPECIFICATION 表迁移 + model（R2-AMENDMENT + R4-BLOCKER-01）
+
+- [ ] **任务描述**：编写 `TBL_CARTON_SPECIFICATION` 表迁移与 GORM model 定义，存储装箱规格配置（每箱标准装箱数 units_per_carton），支持 R4-BLOCKER-01 三维适用范围（product_code + line_code + effective_from/effective_to），30 与 60 可并存
+- [ ] **输入依赖**：TASK-HWV-EV1-000-03（数据库初始化脚本）
+- [ ] **输出产物**：
+  - `pkg/model/carton_specification.go`（领域对象 CartonSpecification，字段 ID/LineCode/ProductCode/UnitsPerCarton/EffectiveFrom/EffectiveTo/ConfigBy/ConfigAt/UpdatedAt）
+  - `internal/store/migration/carton_specification.go`（迁移注册）
+- [ ] **验收标准**：
+  1. 表结构与 design.md §3.3.4 DDL 一致：`id BIGINT PK AUTOINCREMENT` / `line_code VARCHAR(64) NOT NULL` / `product_code VARCHAR(64) NOT NULL` / `units_per_carton INT NOT NULL CHECK > 0` / `effective_from DATE NOT NULL` / `effective_to DATE NULL`（NULL 表示长期生效）/ `config_by VARCHAR(128) NOT NULL` / `config_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP` / `updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`
+  2. **R4-BLOCKER-01 三维唯一性约束**：唯一索引 `UQ_CARTON_SPEC_LINE_PROD_TIME (line_code, product_code, effective_from)` 创建（spec.md §18.7.4 第 8 项时间段唯一性约束）
+  3. 辅助索引 `IDX_CARTON_SPEC_LINE_PROD (line_code, product_code)` / `IDX_CARTON_SPEC_EFFECTIVE (effective_from, effective_to)` 创建（三维查询辅助，design.md §3.3.4）
+  4. 表名常量 `TBL_CARTON_SPECIFICATION` 符合 TBL_ 前缀大写下划线规范（spec.md §18.9.3 第 2 项 + PREFERENCE_17）
+  5. UnitsPerCarton 字段类型为 `int`，GORM tag `gorm:"not null;check:units_per_carton > 0"`
+  6. EffectiveTo 字段类型为 `*string`（可空，NULL 表示长期生效，spec.md §18.7.4 第 5 项）
+  7. **不建外键**：line_code 不建外键关联 TBL_PRODUCTION_LINE，保持与 R4 报表数据物理隔离（design.md §3.3.4 + §3.3.6 协调策略）
+- [ ] **对应条款**：design.md 3.3.4 / 3.8.1；spec.md 18.7.4 / 18.9.3 / 18.10
+
+#### 14.1.8 TASK-HWV-EV1-R4-001-08 CartonSpecRepo CRUD 仓储 + 三维查询（R2-AMENDMENT + R4-BLOCKER-01）
+
+- [ ] **任务描述**：实现 `CartonSpecRepo` 仓储，提供装箱规格配置 CRUD 与按 (product_code, line_code, effective_date) 三维查询有效规格方法，落实 R4-BLOCKER-01 三维查询约束与多规格并存（30 与 60 可同时生效）
+- [ ] **输入依赖**：TASK-HWV-EV1-R4-001-07
+- [ ] **输出产物**：`internal/store/carton_spec_repo.go`
+- [ ] **验收标准**：
+  1. 方法签名：
+     - `Create(ctx, *CartonSpecification) error`（新增配置，校验时间段唯一性）
+     - `Update(ctx, id, *UpdateCartonSpecParams) error`（修改配置，校验修改后不违反时间段唯一性）
+     - `DeleteByID(ctx, id) error`（删除配置，仅允许删除未关联任何 TBL_DAILY_PRODUCTION_PLAN 记录的配置，避免历史数据失去可重现性，design.md §3.4.4 异常 412）
+     - `GetByID(ctx, id) (*CartonSpecification, error)`
+     - `ListAll(ctx) ([]CartonSpecification, error)`（配置页列表用）
+     - **`GetEffectiveSpec(ctx, lineCode, productCode, effectiveDate) (*CartonSpecification, error)`**（R4-BLOCKER-01 三维查询，按 product+line+date 查有效规格）
+  2. **R4-BLOCKER-01 三维查询约束**（spec.md §18.7.4 第 10 项 + design.md §3.3.4）：
+     - 查询 SQL 条件：`line_code = ? AND product_code = ? AND effective_from <= ? AND (effective_to IS NULL OR effective_to >= ?)`，参数依次为 lineCode/productCode/effectiveDate/effectiveDate
+     - 返回该三维条件下唯一生效记录（由时间段唯一性约束保证）
+     - **禁止**仅按单一维度或全局查询：GetEffectiveSpec 三个参数均为必填，缺失任一返回 ErrInvalidQueryParams（spec.md §18.7.4 第 10 项验收条件）
+     - 未找到生效记录返回 ErrCartonSpecNotFound
+  3. **R4-BLOCKER-01 多规格并存约束**（spec.md §18.7.4 第 11 项 + design.md §3.3.4）：
+     - 允许同时存在 units_per_carton=30 与 units_per_carton=60 的生效记录（分别对应不同 product_code/line_code 或不同时间段）
+     - Create 时仅校验同 (line_code, product_code) 时间段重叠，不限制 units_per_carton 取值
+     - 30 与 60 可并存，两份业务证据（§18.2.3 "60 只/箱" 与 §16.4.1 "30 件/箱"）不必互相否定
+  4. **时间段唯一性约束**（spec.md §18.7.4 第 8 项）：Create/Update 时查询现有生效记录的 effective_from/effective_to 是否与新记录重叠，重叠则返回 ErrCartonSpecTimeOverlap（409 Conflict）
+  5. **配置化优先约束**（spec.md §18.7.4 第 9 项 + §18.9.4 第 3 项）：本仓储为 units_per_carton 的唯一配置入口，禁止源代码出现 `units_per_carton = 30` 或 `UNITS_PER_CARTON = 60` 等硬编码常量
+  6. 错误码采用 HTK-E- 前缀结构化（PREFERENCE_2）
+- [ ] **对应条款**：design.md 3.3.4 / 3.4.4 / 3.8.1；spec.md 18.7.4 / 18.9.4 / 18.10
+
+#### 14.1.9 TASK-HWV-EV1-R4-001-09 CartonSpecRepo 仓储单元测试（R4-BLOCKER-01 30/60 并存）
+
+- [ ] **任务描述**：为 `CartonSpecRepo` 编写单元测试，覆盖 CRUD + 三维查询 + 时间段唯一性 + 多规格并存（30 与 60 同时生效）+ 边界
+- [ ] **输入依赖**：TASK-HWV-EV1-R4-001-08
+- [ ] **输出产物**：`internal/store/carton_spec_repo_test.go`
+- [ ] **验收标准**：
+  1. 测试用例 ≥10 条：
+     - 正常 Create（新增配置）
+     - **R4-BLOCKER-01 多规格并存**：同时配置 (line_code='HW102_OLD', product_code='PRODUCT_A', units_per_carton=60) 与 (line_code='HW102_NEW', product_code='PRODUCT_B', units_per_carton=30)，两条记录均合法生效（spec.md §18.7.4 第 11 项 + design.md §3.3.4 配置示例）
+     - **R4-BLOCKER-01 三维查询**：GetEffectiveSpec('HW102_OLD', 'PRODUCT_A', '2026-09-07') 返回 units_per_carton=60；GetEffectiveSpec('HW102_NEW', 'PRODUCT_B', '2026-09-07') 返回 units_per_carton=30（spec.md §18.7.4 第 10 项验收条件）
+     - **R4-BLOCKER-01 三维查询缺失参数拒绝**：GetEffectiveSpec 缺失 product_code 或 line_code 或 effectiveDate 任一参数返回 ErrInvalidQueryParams（spec.md §18.7.4 第 10 项）
+     - 时间段唯一性冲突：同 (line_code, product_code) 时间重叠的 Create 返回 ErrCartonSpecTimeOverlap（spec.md §18.7.4 第 8 项）
+     - 时间段不重叠允许：同 (line_code, product_code) 但 effective_from 在已有记录 effective_to 之后允许 Create
+     - effective_to 为 NULL 表示长期生效：GetEffectiveSpec 查询 effective_to IS NULL 的记录命中
+     - effective_to 早于查询日期不命中：GetEffectiveSpec 查询超过 effective_to 的日期返回 ErrCartonSpecNotFound
+     - 未找到生效记录返回 ErrCartonSpecNotFound
+     - Update 修改 units_per_carton 与 effective_to 后查询命中新值
+     - DeleteByID 关联 TBL_DAILY_PRODUCTION_PLAN 记录时返回 ErrCartonSpecInUse（412 Precondition Failed，design.md §3.4.4 异常映射）
+  2. 测试使用 SQLite 内存数据库 `:memory:`，无外部依赖
+  3. **R4-BLOCKER-01 源代码硬编码核对**：grep 检查 carton_spec_repo.go 与调用方不出现 `units_per_carton = 30` 或 `UNITS_PER_CARTON = 60` 等硬编码常量（spec.md §18.7.4 第 9 项配置化优先约束）
+  4. `go test ./internal/store/... -run TestCartonSpecRepo -v -cover` 全部通过
+- [ ] **对应条款**：design.md 3.3.4 / 3.4.4；spec.md 18.7.4 / 18.10
 
 ### 14.2 TASK-HWV-EV1-R4-002 后端服务层（聚合 + Excel + API）
 
@@ -1322,40 +1433,55 @@ TG4 --> TG3
 
 #### 14.2.2 TASK-HWV-EV1-R4-002-02 report_service 报表聚合 + 数据分离编排
 
-- [ ] **任务描述**：实现 `report_service.go`，编排核心行读取 + 参考区域聚合 + 节假日标注 + 数据来源标注，落实 R2/FROZEN 数据分离红线
-- [ ] **输入依赖**：TASK-HWV-EV1-R4-001-04、TASK-HWV-EV1-R4-001-05
+- [ ] **任务描述**：实现 `report_service.go`，编排核心行读取 + 参考区域聚合 + 节假日标注 + 数据来源标注，落实 R2/FROZEN 数据分离红线；含 R2-AMENDMENT 行2/3/5 actual_quantity 数据来源 + R4-BLOCKER-02 行4 TARGET 标注
+- [ ] **输入依赖**：TASK-HWV-EV1-R4-001-04、TASK-HWV-EV1-R4-001-05、TASK-HWV-EV1-R4-001-08（CartonSpecRepo 三维查询）
 - [ ] **输出产物**：`internal/server/report_service.go`
 - [ ] **验收标准**：
-  1. 主方法 `Aggregate(ctx, startDate, endDate, lineCode) (*DailyOutputPlanReportResponse, error)` 返回完整报表矩阵（design.md §3.4.4 ReportResponse 结构）
+  1. 主方法 `Aggregate(ctx, startDate, endDate, lineCode) (*DailyOutputPlanReportResponse, error)` 返回完整报表矩阵（design.md §3.4.5 ReportResponse 结构）
   2. **数据分离编排**（design.md §3.7.2 编排逻辑）：
      - fork 双路：一路读 `TBL_DAILY_PRODUCTION_PLAN`（核心行 1/2/3/4/5/7/8/10），一路读 `TBL_PRODUCTION_RECORD` 聚合 A/B/D（复用 Statistics Engine §2.6.1）
      - 合并为核心矩阵 + 参考区域，物理隔离不混排
-  3. **禁止操作**（design.md §3.7.2 note）：
+  3. **R2-AMENDMENT + R4-BLOCKER-02 行数据来源**（design.md §3.4.5 + spec.md §18.2.4 第 3 项）：
+     - 行1（目标数量老线 TARGET）：Values 取 value 字段，Source=MANUAL，无 CartonDetails
+     - 行2/行3/行5（实际完成数量 ACTUAL）：Values 取 actual_quantity（经箱数换算后的实际件数），**禁止**直接使用 carton_count 原值；CartonDetails 填充 carton_count/units_per_carton/loose_quantity/actual_quantity 明细；Source=CARTON_CALC
+     - **行4（目标数量新线 TARGET，R4-BLOCKER-02）**：Values 取 value 字段，Source=MANUAL，无 CartonDetails；行4 不涉及箱数换算（spec.md §18.7.5 第 9 项）
+     - 行7/行8/行10（传统录入 ACTUAL）：Values 取 value 字段，Source=MANUAL
+  4. **禁止操作**（design.md §3.7.2 note）：
      - 核心行 ← SUM(TBL_PRODUCTION_RECORD.quantity)（R2 红线）
      - 参考区域数据写入 TBL_DAILY_PRODUCTION_PLAN
      - SQL JOIN 两表推导核心行
-  4. 节假日标注：读取 `TBL_HOLIDAY_CALENDAR`，is_rest=true 的日期列标记黄色（spec.md §18.4.3 第 1 项）
-  5. 数据来源标注：核心行 1/2/3/4/5/7/8/10 Source=MANUAL，行6/行9 Source=AUTO_CALC，参考区域 Source=REFERENCE（design.md §3.7.3）
-  6. 行顺序冻结：按 §18.2.2 顺序 1→10 输出，禁止调整（spec.md §18.2.2 第 1 项）
-  7. 日期列从 start_date 递增至 end_date，每日一列（spec.md §18.2.1 第 1 项）
-  8. 性能约束：响应 ≤3s（95 分位，30 日列 × 10 行聚合，spec.md §18.9.1 第 1 项）
-  9. 异常映射：400（日期格式非法/起止顺序倒置）/ 504（查询超时返回部分数据）
-- [ ] **对应条款**：design.md 3.4.4 / 3.7.2 / 3.7.3；spec.md 18.3 / 18.5.2 / 18.9.1
+     - R2-AMENDMENT: 行2/行3/行5 显示 carton_count 原值
+     - R2-AMENDMENT: actual_quantity 人工录入
+     - R2-AMENDMENT + R4-BLOCKER-01: units_per_carton 硬编码或全局常量
+     - R4-BLOCKER-02: 行6 包含行1/行4 目标数量
+     - R4-BLOCKER-02: 行4 误作实际完成数量参与行6 计算
+  5. 节假日标注：读取 `TBL_HOLIDAY_CALENDAR`，is_rest=true 的日期列标记黄色（spec.md §18.4.3 第 1 项）
+  6. 数据来源标注：核心行 1/4 Source=MANUAL（TARGET），行2/3/5 Source=CARTON_CALC，行7/8/10 Source=MANUAL，行6/行9 Source=AUTO_CALC，参考区域 Source=REFERENCE（design.md §3.7.3）
+  7. 行顺序冻结：按 §18.2.2 顺序 1→10 输出，禁止调整（spec.md §18.2.2 第 1 项）
+  8. 日期列从 start_date 递增至 end_date，每日一列（spec.md §18.2.1 第 1 项）
+  9. 性能约束：响应 ≤3s（95 分位，30 日列 × 10 行聚合，spec.md §18.9.1 第 1 项）
+  10. 异常映射：400（日期格式非法/起止顺序倒置）/ 504（查询超时返回部分数据）
+- [ ] **对应条款**：design.md 3.4.5 / 3.7.2 / 3.7.3；spec.md 18.3 / 18.5.2 / 18.9.1 / 18.2.4 / 18.7.5
 
-#### 14.2.3 TASK-HWV-EV1-R4-002-03 自动计算行（行6/行9）+ 累计列
+#### 14.2.3 TASK-HWV-EV1-R4-002-03 自动计算行（行6/行9）+ 累计列（R4-BLOCKER-02 公式修正）
 
-- [ ] **任务描述**：在 `report_service` 中实现行6（合计）与行9（库存）的自动计算逻辑及所有行的累计列计算，禁止依赖 Excel 公式
+- [ ] **任务描述**：在 `report_service` 中实现行6（合计）与行9（库存）的自动计算逻辑及所有行的累计列计算，禁止依赖 Excel 公式；**R4-BLOCKER-02 修正**：行6 公式为 行2+行3+行5（行4 为目标数量新线 TARGET，不参与实际完成合计）
 - [ ] **输入依赖**：TASK-HWV-EV1-R4-002-02
 - [ ] **输出产物**：`internal/server/report_service.go`（扩充 `computeAutoRows` 与 `computeTotals` 方法）
 - [ ] **验收标准**：
-  1. **行6（合计）计算**（design.md §3.5.4）：对每个日期列 d，`行6[d] = 行2[d] + 行3[d] + 行4[d] + 行5[d]`（nil 视为 0，spec.md §18.4.1 第 2 项）
-  2. **行9（成品库存）计算**（design.md §3.5.4）：对每个日期列 d，`行9[d] = SUM(行7[起始..d]) - SUM(行8[起始..d])`（累计入库 - 累计出货，截至当日，spec.md §18.4.1 第 3 项）
-  3. **累计列计算**（所有行）：`行X.Total = SUM(行X 所有日期列 Values)`（nil 视为 0，spec.md §18.4.1 第 1 项）
-  4. 行6/行9 标记 `IsAuto=true`，禁止人工录入（spec.md §18.4.2 第 4 项）
-  5. 计算在内存完成，不持久化行6/行9（design.md §3.3.4 持久化策略）
-  6. **业务台账基准校验**（spec.md §18.2.3）：录入 2026-09-06 完整台账后，行6 累计应 = E1=2000，行7 累计 = E2=1980，行8 累计 = E3=1680，行9 = E4=300（作为 R4 Evidence 验收项，非运行时强制断言）
-  7. 单元测试覆盖：行6 计算正确性 / 行9 累计差计算正确性 / 累计列计算正确性 / nil 视为 0 / 业务台账基准
-- [ ] **对应条款**：design.md 3.5.4；spec.md 18.4.1 / 18.2.3
+  1. **行6（合计）计算**（design.md §3.5.4 + R4-BLOCKER-02 公式修正，spec.md §18.4.1 第 4 项）：对每个日期列 d，`行6[d] = 行2[d] + 行3[d] + 行5[d]`（nil 视为 0；**行4 目标数量新线不参与计算**，spec.md §18.4.1 第 2 项）
+  2. **R4-BLOCKER-02 行6 公式约束**（spec.md §18.4.1 第 4 项验收条件）：
+     - 行1 目标=2000，行4 目标=2000，行2/3/5 实际=500/500/500 → 行6 合计=1500（实际完成之和），**而非 5500**（含行1+行4 目标）
+     - **禁止**将行1"目标数量老线"、行4"目标数量新线"或任何目标数量行加入实际完成合计（spec.md §18.4.1 第 4 项实际完成合计公式约束）
+     - **目标与实际分离**：行1、行4（目标数量 TARGET）与行6（实际完成合计 AUTO_CALC）分属不同行，**禁止**合并或相加（spec.md §18.4.1 第 5 项）
+  3. **行9（成品库存）计算**（design.md §3.5.4）：对每个日期列 d，`行9[d] = SUM(行7[起始..d]) - SUM(行8[起始..d])`（累计入库 - 累计出货，截至当日，spec.md §18.4.1 第 3 项）
+  4. **累计列计算**（所有行）：`行X.Total = SUM(行X 所有日期列 Values)`（nil 视为 0，spec.md §18.4.1 第 1 项）
+     - **R2-AMENDMENT + R4-BLOCKER-02**：行2/行3/行5 的 Values 取自 actual_quantity，故累计列亦为 actual_quantity 之和；行4 为目标数量，累计列为目标数量之和（design.md §3.5.4）
+  5. 行6/行9 标记 `IsAuto=true`，禁止人工录入（spec.md §18.4.2 第 4 项）
+  6. 计算在内存完成，不持久化行6/行9（design.md §3.3.5 持久化策略）
+  7. **业务台账基准校验**（spec.md §18.2.3 + R4-BLOCKER-02 公式修正）：录入 2026-09-06 完整台账后，行6 累计应 = E1=2000（行2+3+5 实际完成之和，不含行1/行4 目标），行7 累计 = E2=1980，行8 累计 = E3=1680，行9 = E4=300（作为 R4 Evidence 验收项，非运行时强制断言）
+  8. 单元测试覆盖：行6 计算正确性（行2+3+5）/ 行6 不包含行1/行4 目标 / 行9 累计差计算正确性 / 累计列计算正确性 / nil 视为 0 / 业务台账基准
+- [ ] **对应条款**：design.md 3.5.4；spec.md 18.4.1 / 18.2.3 / 18.10
 
 #### 14.2.4 TASK-HWV-EV1-R4-002-04 标签补打参考数据聚合（A/B/D）
 
@@ -1387,46 +1513,53 @@ TG4 --> TG3
 
 #### 14.2.6 TASK-HWV-EV1-R4-002-06 excel_exporter 生成 .xlsx + 颜色编码
 
-- [ ] **任务描述**：实现 `excel_exporter.go`，使用 excelize 生成 .xlsx 二进制流，落实矩阵布局 + 颜色编码 + 自动计算行 + 累计列
+- [ ] **任务描述**：实现 `excel_exporter.go`，使用 excelize 生成 .xlsx 二进制流，落实矩阵布局 + 颜色编码 + 自动计算行 + 累计列 + R2-AMENDMENT 辅助列（行2/3/5 箱数换算明细）+ R4-BLOCKER-02 行4 TARGET 绿色背景
 - [ ] **输入依赖**：TASK-HWV-EV1-R4-002-05、TASK-HWV-EV1-R4-002-03
 - [ ] **输出产物**：`internal/server/excel_exporter.go`
 - [ ] **验收标准**：
   1. 主方法 `Export(ctx, *DailyOutputPlanReportResponse) ([]byte, error)` 返回 .xlsx 二进制流
   2. **矩阵布局**（design.md §3.5.2）：
      - 标题行（行1）："102日产出计划报表（YYYY-MM-DD 至 YYYY-MM-DD）" 合并单元格
-     - 表头行（行2）：列1="行名称" / 列2..列N+1=日期 / 列N+2="累计数量"
+     - 表头行（行2）：列1="行名称" / 列2..列N+1=日期 / 列N+2="累计数量" / 列N+3-列N+6="箱数/装箱规格/散件/实际件数"（R2-AMENDMENT 辅助列，仅行2/3/5 填充）
      - 核心数据行（行3-行12）：10 个核心行，按 §18.2.2 顺序冻结
      - 参考区域标题（行14）："标签补打参考区域（数据来源：TBL_PRODUCTION_RECORD 自动采集）"
      - 参考数据行（行15-行17）：A/B/D 三行
-     - 数据来源说明（行19）："核心数据行来源：人工录入/MES导入；参考区域来源：自动采集（R2 裁决：禁止进入核心行）"
-  3. **颜色编码**（design.md §3.5.3，spec.md §18.2.2 第 2 项）：
-     - 行1（目标数量老线）整行绿色背景 `#92D050`
+     - 数据来源说明（行19）："核心数据行来源：人工录入/MES导入；参考区域来源：自动采集（R2 裁决：禁止进入核心行）；行2/行3/行5 实际完成数量来源：actual_quantity = carton_count × units_per_carton + loose_quantity（R2-AMENDMENT）；行4 为目标数量新线 TARGET（R4-BLOCKER-02）"
+  3. **颜色编码**（design.md §3.5.3，spec.md §18.2.2 第 2 项 + R4-BLOCKER-02）：
+     - 行1（目标数量老线 TARGET）整行绿色背景 `#92D050`
+     - **行4（目标数量新线 TARGET，R4-BLOCKER-02）整行绿色背景 `#92D050`**（spec.md §18.2.2 行4 绿色 + design.md §3.5.3）
      - 行6（合计）整行蓝色背景 `#BDD7EE`
      - 节假日列（is_rest=true）黄色背景 `#FFE699`，优先级高于行颜色
      - 累计列（最右列）浅灰背景 `#F2F2F2`
      - 参考区域标题行浅蓝背景 `#DEEBF7`
+     - R2-AMENDMENT 辅助列浅灰背景 `#F2F2F2`（区别于主数据列，design.md §3.5.2）
   4. 样式通过 `NewStyle` 创建 ID，按行列坐标 `SetCellStyle` 批量应用（性能优化，避免逐单元格创建）
-  5. **导出完整性**：导出 Excel 与前端预览完全一致（数据、颜色、行列顺序，spec.md §18.4.4 第 3 项）——通过 report_service.Aggregate() 单一数据源保证
-  6. **内存缓冲**：写入 `bytes.Buffer` 后直接返回，避免磁盘 IO 与临时文件清理（design.md §3.5.5）
-  7. **命名约束**：文件名形如 `102日产出计划报表_YYYYMMDD-YYYYMMDD.xlsx`，禁含"生产数量"字样（spec.md §18.4.4 第 2 项）
-  8. 性能约束：导出 ≤5s（95 分位，30 日范围，spec.md §18.9.1 第 2 项）
-  9. 异常时 Buffer 释放，无残留临时文件（spec.md §18.6 第 4 项导出失败场景）
-- [ ] **对应条款**：design.md 3.5.2 / 3.5.3 / 3.5.5；spec.md 18.2.2 / 18.4.4 / 18.9.1
+  5. **R2-AMENDMENT + R4-BLOCKER-02 辅助列写入**（design.md §3.5.5）：
+     - 行2/行3/行5 辅助列写入 carton_count/units_per_carton_snapshot/loose_quantity/actual_quantity 明细，便于审计与可追溯性
+     - **行4 目标数量新线不写辅助列**（R4-BLOCKER-02，行4 为 TARGET 不涉及箱数换算）
+     - 主显示列（日期列 + 累计列）取 actual_quantity，**禁止**显示 carton_count 原值（spec.md §18.2.4 第 3 项）
+  6. **R4-BLOCKER-02 行6 公式修正**（design.md §3.5.4）：行6 = 行2 + 行3 + 行5（行4 为目标数量新线 TARGET，不参与计算），**禁止**包含行1/行4 目标数量（spec.md §18.4.1 第 4/5 项）
+  7. **导出完整性**：导出 Excel 与前端预览完全一致（数据、颜色、行列顺序，spec.md §18.4.4 第 3 项）——通过 report_service.Aggregate() 单一数据源保证
+  8. **内存缓冲**：写入 `bytes.Buffer` 后直接返回，避免磁盘 IO 与临时文件清理（design.md §3.5.5）
+  9. **命名约束**：文件名形如 `102日产出计划报表_YYYYMMDD-YYYYMMDD.xlsx`，禁含"生产数量"字样（spec.md §18.4.4 第 2 项）
+  10. 性能约束：导出 ≤5s（95 分位，30 日范围，spec.md §18.9.1 第 2 项）
+  11. 异常时 Buffer 释放，无残留临时文件（spec.md §18.6 第 4 项导出失败场景）
+- [ ] **对应条款**：design.md 3.5.2 / 3.5.3 / 3.5.4 / 3.5.5；spec.md 18.2.2 / 18.2.4 / 18.4.1 / 18.4.4 / 18.9.1 / 18.10
 
 #### 14.2.7 TASK-HWV-EV1-R4-002-07 REST API handler + 路由注册
 
-- [ ] **任务描述**：实现 R4 REST API handler 并注册 `/api/v1/reports/*` 路由组，覆盖日计划 CRUD / 节假日 CRUD / 报表聚合 / Excel 导出 / 标签补打参考
+- [ ] **任务描述**：实现 R4 REST API handler 并注册 `/api/v1/reports/*` 路由组 + `/api/v1/config/carton-spec` 路由（R2-AMENDMENT），覆盖日计划 CRUD / 节假日 CRUD / 报表聚合 / Excel 导出 / 标签补打参考
 - [ ] **输入依赖**：TASK-HWV-EV1-R4-002-02、TASK-HWV-EV1-R4-002-06、TASK-HWV-EV1-R4-002-01
 - [ ] **输出产物**：`internal/server/api/report_handler.go`、`internal/server/router.go`（扩充注册）
 - [ ] **验收标准**：
   1. **日计划 CRUD**（design.md §3.4.2）：
-     - `POST /api/v1/reports/daily-plan/entries`（创建/覆盖，请求体 CreatePlanEntryRequest）
+     - `POST /api/v1/reports/daily-plan/entries`（创建/覆盖，请求体 CreatePlanEntryRequest，含 R2-AMENDMENT carton_count/loose_quantity/product_code 字段）
      - `GET /api/v1/reports/daily-plan/entries?plan_date=&line_code=`（列表）
      - `PUT /api/v1/reports/daily-plan/entries/{id}`（覆盖更新）
      - `DELETE /api/v1/reports/daily-plan/entries/{id}`
      - `POST /api/v1/reports/daily-plan/entries/batch`（批量录入）
      - 前置条件：PRODUCTION_ADMIN 角色；后置条件：TBL_AUDIT_LOG 记录 action=REPORT_INPUT（含旧值/新值）
-     - 异常映射：400（row_no 不在 1-10 / value 负数 / 日期格式非法）/ 403（非生产管理员）/ 409（行号为 6 或 9，spec.md §18.4.2 第 4 项）
+     - 异常映射：400（row_no 不在 1-10 / value 负数 / 日期格式非法）/ 403（非生产管理员）/ 409（行号为 6 或 9，spec.md §18.4.2 第 4 项）/ 422（请求体含 actual_quantity 字段，R2-AMENDMENT，spec.md §18.7.5 第 8 项）
   2. **节假日 CRUD**（design.md §3.4.3）：
      - `POST /api/v1/reports/holidays`（UPSERT）
      - `GET /api/v1/reports/holidays`（列表）
@@ -1434,114 +1567,165 @@ TG4 --> TG3
      - `DELETE /api/v1/reports/holidays/{date}`
      - 前置条件：OPS_ADMIN 或 PRODUCTION_ADMIN；后置条件：TBL_AUDIT_LOG 记录 action=HOLIDAY_CONFIG
      - 异常映射：400（日期格式非法/名称为空）/ 403（权限不足）
-  3. **报表聚合**（design.md §3.4.4）：
+  3. **报表聚合**（design.md §3.4.5）：
      - `GET /api/v1/reports/daily-output-plan?start_date=&end_date=&line_code=`
      - 前置条件：已认证（PRODUCTION_ADMIN 或 MONITOR 均可，spec.md §18.8.2 第 2 项）
-     - 响应体 DailyOutputPlanReportResponse（含 Dates/Holidays/CoreRows/Reference/GeneratedAt）
+     - 响应体 DailyOutputPlanReportResponse（含 Dates/Holidays/CoreRows/Reference/GeneratedAt，CoreRows 含 R2-AMENDMENT CartonDetails 辅助明细）
      - 性能 ≤3s（95 分位）
-  4. **Excel 导出**（design.md §3.4.5）：
+  4. **Excel 导出**（design.md §3.4.6）：
      - `GET /api/v1/reports/daily-output-plan/export?start_date=&end_date=&line_code=&format=xlsx`
      - 响应 Content-Type: `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
      - 响应 Content-Disposition: `attachment; filename="102日产出计划报表_YYYYMMDD-YYYYMMDD.xlsx"`
      - 后置条件：TBL_AUDIT_LOG 记录 action=REPORT_EXPORT（含日期范围）
      - 异常映射：400（日期格式非法）/ 415（format 非 xlsx）/ 500（Excel 生成异常）
-  5. **标签补打参考**（design.md §3.4.6）：
+  5. **标签补打参考**（design.md §3.4.7）：
      - `GET /api/v1/reports/label-reprint-reference?start_date=&end_date=`
      - 响应体 LabelReprintReferenceResponse（A/B/D 三行）
      - 数据用途约束：不提供写入核心行能力
   6. 所有接口含 `/api/v1/` 版本前缀（继承 §2.2.1 变更策略）
-  7. 路由在 `internal/server/router.go` 注册 `/api/v1/reports/*` 路由组
+  7. 路由在 `internal/server/router.go` 注册 `/api/v1/reports/*` 路由组 + `/api/v1/config/carton-spec` 路由（R2-AMENDMENT，design.md §3.8.1 接入点）
   8. 所有写入接口经 Auth Middleware 校验角色（spec.md §18.8.2）
-- [ ] **对应条款**：design.md 3.4.1 / 3.4.2 / 3.4.3 / 3.4.4 / 3.4.5 / 3.4.6 / 3.8.1；spec.md 18.4 / 18.5 / 18.8.2
+- [ ] **对应条款**：design.md 3.4.1 / 3.4.2 / 3.4.3 / 3.4.5 / 3.4.6 / 3.4.7 / 3.8.1；spec.md 18.4 / 18.5 / 18.8.2 / 18.7.5
 
 #### 14.2.8 TASK-HWV-EV1-R4-002-08 report_service 单元测试
 
-- [ ] **任务描述**：为 `report_service` 编写单元测试，覆盖聚合 + 自动计算 + 数据分离 + 节假日标注 + 业务台账基准
-- [ ] **输入依赖**：TASK-HWV-EV1-R4-002-07
+- [ ] **任务描述**：为 `report_service` 编写单元测试，覆盖聚合 + 自动计算 + 数据分离 + 节假日标注 + 业务台账基准 + R2-AMENDMENT 箱数换算 + R4-BLOCKER-02 行6 公式修正
+- [ ] **输入依赖**：TASK-HWV-EV1-R4-002-07、TASK-HWV-EV1-R4-002-10
 - [ ] **输出产物**：`internal/server/report_service_test.go`
 - [ ] **验收标准**：
-  1. 测试用例 ≥12 条：
+  1. 测试用例 ≥16 条：
      - 空数据聚合（无录入数据，核心行全 nil，参考区域全 0）
      - 部分日期录入（仅 9/6 录入，其他日期空）
-     - 行6 自动计算（行2+3+4+5 各日列求和）
+     - **R4-BLOCKER-02 行6 自动计算**：行6 = 行2 + 行3 + 行5（各日列求和，**不包含行4 目标数量**，spec.md §18.4.1 第 4 项）
+     - **R4-BLOCKER-02 行6 不包含目标数量**：行1 目标=2000，行4 目标=2000，行2/3/5 实际=500/500/500 → 行6 合计=1500（而非 5500，spec.md §18.4.1 第 4 项验收条件）
      - 行9 自动计算（累计入库 - 累计出货）
      - 累计列计算（每行 Total = SUM 日期列）
      - nil 视为 0 计算
      - 节假日标注（is_rest=true 的日期列标记）
-     - 数据来源标注（MANUAL/AUTO_CALC/REFERENCE）
+     - 数据来源标注（MANUAL/CARTON_CALC/AUTO_CALC/REFERENCE，R4-BLOCKER-02 行4=MANUAL TARGET）
      - 行顺序冻结（输出顺序 1→10）
+     - **R2-AMENDMENT 行2/3/5 actual_quantity 数据来源**：录入 carton_count=17 + loose_quantity=9 + units_per_carton=30 → actual_quantity=519，行2/3/5 Values 取 519 非 17（spec.md §18.2.4 第 3 项）
+     - **R2-AMENDMENT + R4-BLOCKER-02 行4 TARGET**：行4 Values 取 value 字段，无 CartonDetails，不涉及箱数换算（spec.md §18.7.5 第 9 项）
      - **数据分离红线**：核心行不来自 TBL_PRODUCTION_RECORD.quantity 求和（R2 红线）
-     - **业务台账基准**（spec.md §18.2.3）：录入 2026-09-06 完整台账后行6 累计=2000 / 行7 累计=1980 / 行8 累计=1680 / 行9=300
+     - **业务台账基准**（spec.md §18.2.3 + R4-BLOCKER-02 公式修正）：录入 2026-09-06 完整台账后行6 累计=2000（行2+3+5 实际完成之和，不含行1/行4 目标）/ 行7 累计=1980 / 行8 累计=1680 / 行9=300
+     - **R4-BLOCKER-01 三维查询**：行2/3/5 录入时从 CartonSpecRepo.GetEffectiveSpec(line_code, product_code, plan_date) 三维查询获取 units_per_carton_snapshot（spec.md §18.7.4 第 10 项）
      - 日期范围校验（起止顺序倒置返回 400）
-  2. 测试使用 SQLite 内存数据库 + 模拟 TBL_PRODUCTION_RECORD 数据
+  2. 测试使用 SQLite 内存数据库 + 模拟 TBL_PRODUCTION_RECORD 数据 + 模拟 TBL_CARTON_SPECIFICATION 配置
   3. `go test ./internal/server/... -run TestReportService -v -cover` 全部通过
-- [ ] **对应条款**：design.md 3.4.4 / 3.5.4 / 3.7.2；spec.md 18.2.3 / 18.4.1 / 18.9.1
+- [ ] **对应条款**：design.md 3.4.5 / 3.5.4 / 3.7.2；spec.md 18.2.3 / 18.2.4 / 18.4.1 / 18.7.4 / 18.7.5 / 18.9.1 / 18.10
 
 #### 14.2.9 TASK-HWV-EV1-R4-002-09 excel_exporter 单元测试
 
-- [ ] **任务描述**：为 `excel_exporter` 编写单元测试，验证 .xlsx 生成 + 颜色编码 + 矩阵布局 + 命名合规
+- [ ] **任务描述**：为 `excel_exporter` 编写单元测试，验证 .xlsx 生成 + 颜色编码 + 矩阵布局 + 命名合规 + R2-AMENDMENT 辅助列 + R4-BLOCKER-02 行4 TARGET 绿色背景
 - [ ] **输入依赖**：TASK-HWV-EV1-R4-002-06
 - [ ] **输出产物**：`internal/server/excel_exporter_test.go`
 - [ ] **验收标准**：
-  1. 测试用例 ≥8 条：
+  1. 测试用例 ≥11 条：
      - 生成 .xlsx 字节流非空
      - 标题行内容含"102日产出计划报表"字样
      - **命名合规**：文件名不含"生产数量"字样（spec.md §18.1.3 第 1 项）
-     - 行1 整行绿色背景 `#92D050`
+     - 行1 整行绿色背景 `#92D050`（目标数量老线 TARGET）
+     - **行4 整行绿色背景 `#92D050`**（R4-BLOCKER-02，目标数量新线 TARGET，spec.md §18.2.2 行4 绿色 + design.md §3.5.3）
      - 行6 整行蓝色背景 `#BDD7EE`
      - 节假日列黄色背景 `#FFE699`（优先级高于行颜色）
      - 累计列浅灰背景 `#F2F2F2`
      - 行顺序冻结（10 行顺序 1→10）
+     - **R2-AMENDMENT 辅助列**：行2/3/5 辅助列写入 carton_count/units_per_carton_snapshot/loose_quantity/actual_quantity 明细；行4 不写辅助列（R4-BLOCKER-02，design.md §3.5.5）
+     - **R2-AMENDMENT 主显示列**：行2/3/5 主显示列取 actual_quantity，不显示 carton_count 原值（spec.md §18.2.4 第 3 项）
   2. 使用 excelize 读取生成的 .xlsx 字节流，校验单元格样式与值
   3. **导出完整性**：导出 Excel 与输入 DailyOutputPlanReportResponse 完全一致（数据、颜色、行列顺序，spec.md §18.4.4 第 3 项）
   4. 性能测试：30 日范围导出 ≤5s（spec.md §18.9.1 第 2 项）
   5. `go test ./internal/server/... -run TestExcelExporter -v -cover` 全部通过
-- [ ] **对应条款**：design.md 3.5.2 / 3.5.3 / 3.5.5；spec.md 18.2.2 / 18.4.4 / 18.9.1
+- [ ] **对应条款**：design.md 3.5.2 / 3.5.3 / 3.5.5；spec.md 18.2.2 / 18.2.4 / 18.4.4 / 18.9.1 / 18.10
 
-### 14.3 TASK-HWV-EV1-R4-003 前端页面（预览 + 录入 + 节假日 + 导出）
+#### 14.2.10 TASK-HWV-EV1-R4-002-10 装箱规格配置接口 handler + 三维查询（R2-AMENDMENT + R4-BLOCKER-01）
+
+- [ ] **任务描述**：实现装箱规格配置接口 handler（GET/POST/PUT/DELETE `/api/v1/config/carton-spec`），落实 R4-BLOCKER-01 三维查询（按 product_code + line_code + effective_date 查有效规格）与多规格并存（30 与 60 可同时生效）
+- [ ] **输入依赖**：TASK-HWV-EV1-R4-001-08（CartonSpecRepo）、TASK-HWV-EV1-R4-002-01（角色权限扩展）
+- [ ] **输出产物**：`internal/server/api/carton_spec_handler.go`、`internal/server/router.go`（扩充注册 `/api/v1/config/carton-spec` 路由）
+- [ ] **验收标准**：
+  1. **POST /api/v1/config/carton-spec**（新增配置，design.md §3.4.4）：
+     - 请求体 CreateCartonSpecRequest：line_code（必填）/ product_code（必填）/ units_per_carton（必填，正整数）/ effective_from（必填，YYYY-MM-DD）/ effective_to（可空，YYYY-MM-DD）
+     - 前置条件：OPS_ADMIN 或 PRODUCTION_ADMIN 角色
+     - 后置条件：TBL_AUDIT_LOG 记录 action=CARTON_SPEC_CONFIG（含旧值/新值/units_per_carton，spec.md §18.9.2 第 1 项录入审计规则）
+     - 异常映射：400（units_per_carton < 1 / 日期格式非法 / effective_to < effective_from）/ 403（权限不足）/ 409（时间段唯一性冲突，spec.md §18.7.4 第 8 项）
+  2. **GET /api/v1/config/carton-spec?line_code=&product_code=&effective_date=**（R4-BLOCKER-01 三维查询生效配置，design.md §3.4.4）：
+     - 请求参数 CartonSpecQuery：line_code（必填）/ product_code（必填）/ effective_date（必填，查询该日期生效的配置）
+     - **R4-BLOCKER-01 三维查询约束**（spec.md §18.7.4 第 10 项）：三个参数均为必填，缺失任一返回 400 Bad Request（"必须提供 product_code + line_code + 日期 三维查询条件"）
+     - 响应体 CartonSpecResponse：ID/LineCode/ProductCode/UnitsPerCarton/EffectiveFrom/EffectiveTo/ConfigBy/ConfigAt/UpdatedAt
+     - 查询逻辑：`effective_from <= effective_date AND (effective_to IS NULL OR effective_to >= effective_date)`，返回该三维条件下唯一生效记录（design.md §3.3.4 生效日期查询逻辑）
+     - 异常映射：400（缺失三维条件任一参数）/ 404（未找到生效记录）
+  3. **PUT /api/v1/config/carton-spec/{id}**（修改配置）：
+     - 请求体 UpdateCartonSpecRequest：units_per_carton（可选）/ effective_to（可选）
+     - 校验修改后不违反时间段唯一性
+     - 后置条件：TBL_AUDIT_LOG 记录 action=CARTON_SPEC_CONFIG
+     - **不影响已录入历史数据**：TBL_DAILY_PRODUCTION_PLAN 中已存在的 units_per_carton_snapshot 不变（历史快照已冻结，design.md §3.3.6 协调策略）
+  4. **DELETE /api/v1/config/carton-spec/{id}**（删除配置）：
+     - 仅允许删除未关联任何 TBL_DAILY_PRODUCTION_PLAN 记录的配置（避免历史数据失去可重现性）
+     - 异常映射：412 Precondition Failed（存在关联的 TBL_DAILY_PRODUCTION_PLAN 记录，design.md §3.4.4 异常映射）
+  5. **R4-BLOCKER-01 多规格并存约束**（spec.md §18.7.4 第 11 项 + design.md §3.4.4）：
+     - 允许配置 units_per_carton=30 或 60（或其它正整数），分别对应不同 (product_code, line_code) 或不同时间段同时生效
+     - 30 与 60 可并存，两份业务证据（§18.2.3 "60 只/箱" 与 §16.4.1 "30 件/箱"）不必互相否定
+     - **禁止**在源代码中出现 `units_per_carton = 30` 或 `UNITS_PER_CARTON = 60` 等硬编码常量（spec.md §18.7.4 第 9 项 + §18.9.4 第 3 项）
+  6. 路由在 `internal/server/router.go` 注册 `/api/v1/config/carton-spec` 路由组（design.md §3.8.1 接入点）
+  7. 所有接口经 Auth Middleware 校验角色（OPS_ADMIN 或 PRODUCTION_ADMIN）
+  8. 错误码采用 HTK-E- 前缀结构化（PREFERENCE_2）
+- [ ] **对应条款**：design.md 3.4.4 / 3.8.1 / 3.9；spec.md 18.7.4 / 18.9.2 / 18.9.4 / 18.10
+
+### 14.3 TASK-HWV-EV1-R4-003 前端页面（预览 + 录入 + 节假日 + 导出 + 装箱规格配置）
 
 #### 14.3.1 TASK-HWV-EV1-R4-003-01 路由 + 类型定义 + AuthProvider 角色扩展
 
-- [ ] **任务描述**：新增 `/reports/*` 路由组 + TypeScript 类型定义 + AuthProvider 扩展生产管理员角色与路由守卫
+- [ ] **任务描述**：新增 `/reports/*` 路由组 + `/config/carton-spec` 路由 + TypeScript 类型定义（含 R2-AMENDMENT CartonDetail/CartonSpec 类型）+ AuthProvider 扩展生产管理员角色与路由守卫
 - [ ] **输入依赖**：TASK-HWV-EV1-000-02（前端项目初始化）、TASK-HWV-EV1-R4-002-01
 - [ ] **输出产物**：
   - `web/src/routes/reports.ts`（路由注册）
-  - `web/src/types/report.ts`（TS 类型定义，禁止 any，PREFERENCE_8）
+  - `web/src/routes/carton_spec.ts`（R2-AMENDMENT 装箱规格配置路由注册）
+  - `web/src/types/report.ts`（TS 类型定义，禁止 any，PREFERENCE_8，含 R2-AMENDMENT CartonDetail/CartonSpecification 类型）
   - `web/src/auth/AuthProvider.tsx`（扩充角色枚举）
 - [ ] **验收标准**：
   1. 路由结构（design.md §3.6.1）：
      - `/reports/daily-output-plan` → DailyOutputPlanPage（报表预览页）
      - `/reports/daily-plan/input` → PlanInputPage（人工录入页，仅 PRODUCTION_ADMIN）
      - `/reports/holidays` → HolidayConfigPage（节假日配置页，OPS_ADMIN 或 PRODUCTION_ADMIN）
-  2. TypeScript 类型定义（design.md §3.4.4 ReportResponse / ReportRow / ReportReferenceArea / ReportReferenceRow 等），Strict 模式禁止 `any`（spec.md §18.9.3 第 1 项 + PREFERENCE_8）
+     - `/config/carton-spec` → CartonSpecConfigPage（R2-AMENDMENT 装箱规格配置页，OPS_ADMIN 或 PRODUCTION_ADMIN）
+  2. TypeScript 类型定义（design.md §3.4.5 ReportResponse / ReportRow / ReportReferenceArea / ReportReferenceRow / CartonDetail + §3.4.4 CartonSpecResponse 等），Strict 模式禁止 `any`（spec.md §18.9.3 第 1 项 + PREFERENCE_8）
+     - **R2-AMENDMENT CartonDetail 类型**：date/carton_count/units_per_carton/loose_quantity/actual_quantity/has_carton_data（design.md §3.4.5）
+     - **R2-AMENDMENT CartonSpecification 类型**：id/line_code/product_code/units_per_carton/effective_from/effective_to/config_by/config_at/updated_at（design.md §3.4.4）
+     - **R4-BLOCKER-02 行4 TARGET 标注**：ReportRow.source 枚举含 MANUAL/CARTON_CALC/AUTO_CALC/REFERENCE，行4 Source=MANUAL（design.md §3.7.3）
   3. AuthProvider 角色枚举新增 `PRODUCTION_ADMIN`（design.md §3.8.4）
-  4. 路由守卫：`/reports/daily-plan/input` 仅 PRODUCTION_ADMIN 可访问，越权重定向至预览页并提示权限不足（spec.md §18.8.2 第 1 项 + design.md §3.6.3）
+  4. 路由守卫：`/reports/daily-plan/input` 仅 PRODUCTION_ADMIN 可访问，越权重定向至预览页并提示权限不足（spec.md §18.8.2 第 1 项 + design.md §3.6.3）；`/config/carton-spec` 仅 OPS_ADMIN 或 PRODUCTION_ADMIN 可访问
   5. 现有运维管理员/生产监控员路由不受影响（向后兼容）
   6. `npm run build` 与 `tsc --noEmit` 通过
-- [ ] **对应条款**：design.md 3.6.1 / 3.8.2 / 3.8.4；spec.md 18.8.2 / 18.9.3
+- [ ] **对应条款**：design.md 3.4.4 / 3.4.5 / 3.6.1 / 3.8.2 / 3.8.4 / 3.7.3；spec.md 18.7.4 / 18.8.2 / 18.9.3 / 18.10
 
 #### 14.3.2 TASK-HWV-EV1-R4-003-02 React Query hooks
 
-- [ ] **任务描述**：实现 R4 React Query hooks，封装 API 调用与缓存失效
+- [ ] **任务描述**：实现 R4 React Query hooks，封装 API 调用与缓存失效，含 R2-AMENDMENT 装箱规格配置 CRUD hooks
 - [ ] **输入依赖**：TASK-HWV-EV1-R4-003-01
 - [ ] **输出产物**：
   - `web/src/pages/reports/hooks/use_daily_output_plan.ts`（报表聚合查询）
-  - `web/src/pages/reports/hooks/use_plan_entries.ts`（日计划 CRUD）
+  - `web/src/pages/reports/hooks/use_plan_entries.ts`（日计划 CRUD，含 R2-AMENDMENT carton_count/loose_quantity/product_code 字段）
   - `web/src/pages/reports/hooks/use_holidays.ts`（节假日 CRUD）
   - `web/src/pages/reports/hooks/use_export_report.ts`（导出触发）
+  - `web/src/pages/config/hooks/use_carton_spec.ts`（R2-AMENDMENT 装箱规格配置 CRUD + 三维查询）
 - [ ] **验收标准**：
   1. `useDailyOutputPlan(startDate, endDate, lineCode)`：调用 `GET /api/v1/reports/daily-output-plan`，配置 `refetchInterval` 近实时刷新（继承 §2.9.3 风格）
-  2. `useCreatePlanEntry / useUpdatePlanEntry / useDeletePlanEntry`：调用对应 CRUD 接口，成功后 invalidate 报表聚合查询
+  2. `useCreatePlanEntry / useUpdatePlanEntry / useDeletePlanEntry`：调用对应 CRUD 接口，成功后 invalidate 报表聚合查询；请求体含 R2-AMENDMENT carton_count/loose_quantity/product_code 字段（行2/3/5 箱数换算模式）
   3. `useHolidays / useCreateHoliday / useUpdateHoliday / useDeleteHoliday`：节假日 CRUD
   4. `useExportReport(startDate, endDate, lineCode)`：触发导出，返回 Blob
-  5. 所有 hooks 类型安全，响应类型定义于 `types/report.ts`
-  6. 错误处理：API 失败时 toast 提示，不破坏页面
-  7. `npm run build` 通过
-- [ ] **对应条款**：design.md 3.6.1 / 3.6.5；spec.md 18.5 / 18.9.3
+  5. **R2-AMENDMENT + R4-BLOCKER-01 装箱规格配置 hooks**：
+     - `useCartonSpecs()`：调用 `GET /api/v1/config/carton-spec`（列表，配置页用）
+     - `useEffectiveCartonSpec(lineCode, productCode, effectiveDate)`：**R4-BLOCKER-01 三维查询**，调用 `GET /api/v1/config/carton-spec?line_code=&product_code=&effective_date=`，三个参数均为必填（spec.md §18.7.4 第 10 项）
+     - `useCreateCartonSpec / useUpdateCartonSpec / useDeleteCartonSpec`：装箱规格配置 CRUD，成功后 invalidate 列表查询
+  6. 所有 hooks 类型安全，响应类型定义于 `types/report.ts`
+  7. 错误处理：API 失败时 toast 提示，不破坏页面；**R4-BLOCKER-01 三维查询缺失参数**时前端校验提示"必须提供 product_code + line_code + 日期 三维查询条件"（spec.md §18.7.4 第 10 项）
+  8. `npm run build` 通过
+- [ ] **对应条款**：design.md 3.4.4 / 3.6.1 / 3.6.5；spec.md 18.5 / 18.7.4 / 18.9.3 / 18.10
 
-#### 14.3.3 TASK-HWV-EV1-R4-003-03 报表预览页面（ReportMatrix + ReferenceArea）
+#### 14.3.3 TASK-HWV-EV1-R4-003-03 报表预览页面（ReportMatrix + ReferenceArea，R4-BLOCKER-02 行4 TARGET）
 
-- [ ] **任务描述**：实现报表预览页面，含日期范围选择器 + 10 行 × N 列核心矩阵 + 参考区域 + 颜色编码渲染
+- [ ] **任务描述**：实现报表预览页面，含日期范围选择器 + 10 行 × N 列核心矩阵 + 参考区域 + 颜色编码渲染 + R2-AMENDMENT 辅助列（行2/3/5 箱数换算明细）+ R4-BLOCKER-02 行4"目标数量新线"TARGET 绿色背景不参与合计
 - [ ] **输入依赖**：TASK-HWV-EV1-R4-003-02、TASK-HWV-EV1-R4-002-07
 - [ ] **输出产物**：
   - `web/src/pages/reports/daily_output_plan_page.tsx`（预览页）
@@ -1549,44 +1733,68 @@ TG4 --> TG3
   - `web/src/pages/reports/components/reference_area.tsx`（参考区域组件）
 - [ ] **验收标准**：
   1. **日期范围选择器**（DateRangePicker）：默认近 30 日，可调整（spec.md §18.2.1 第 1 项）
-  2. **核心矩阵**（ReportMatrix，design.md §3.6.2）：
-     - 10 行 × N 列 + 累计列
-     - 行顺序冻结（§18.2.2 第 1 项），行1 绿色背景、行6 蓝色背景、节假日列黄色背景（§3.5.3 颜色编码）
+  2. **核心矩阵**（ReportMatrix，design.md §3.6.2 + R4-BLOCKER-02）：
+     - 10 行 × N 列 + 累计列 + R2-AMENDMENT 辅助列（行2/3/5 箱数/装箱规格/散件/实际件数）
+     - **行顺序冻结**（§18.2.2 第 1 项 + R4-BLOCKER-02）：目标老线→老线白班实际→老线夜班实际→目标新线→新线实际→合计→入库→出货→库存→产线剩余
+     - **行名称标签**（R4-BLOCKER-02，spec.md §18.2.2）：
+       - 行1："目标数量老线"（TARGET，绿色背景 `#92D050`）
+       - 行2："实际完成数量（老线白班）"（ACTUAL）
+       - 行3："实际完成数量（老线夜班）"（ACTUAL）
+       - **行4："目标数量新线"（TARGET，绿色背景 `#92D050`，不参与合计，spec.md §18.2.2 行4 + R4-BLOCKER-02）**
+       - **行5："实际完成数量（新线）"（ACTUAL，不再区分白/夜班，spec.md §18.2.2 行5 + R4-BLOCKER-02）**
+       - 行6："合计（新老线实际完成数量）"（AUTO_CALC，蓝色背景 `#BDD7EE`，= 行2+3+5）
+       - 行7-行10：成品入库/出货/成品库存/产线成品剩余
+     - 节假日列黄色背景（§3.5.3 颜色编码）
      - 行6/行9 单元格只读，标注"自动计算"（spec.md §18.4.2 第 4 项）
      - 累计列最右，浅灰背景
-     - 每个单元格标注数据来源标签（MANUAL/AUTO_CALC/REFERENCE，spec.md §18.3 数据来源分离）
+     - **R2-AMENDMENT 辅助列**（行2/3/5）：显示 carton_count/units_per_carton/loose_quantity/actual_quantity 明细，浅灰背景；行4 不显示辅助列（R4-BLOCKER-02，design.md §3.5.2）
+     - 每个单元格标注数据来源标签（MANUAL/CARTON_CALC/AUTO_CALC/REFERENCE，spec.md §18.3 数据来源分离 + R4-BLOCKER-02 行4=MANUAL TARGET）
   3. **参考区域**（ReferenceArea）：A/B/D 三行，独立区块，标题明确标注"数据来源：TBL_PRODUCTION_RECORD 自动采集（R2 裁决：禁止进入核心行）"（design.md §3.6.2）
   4. 数据获取：React Query 调用 `useDailyOutputPlan`，loading/error 状态处理
   5. **权限控制**：生产管理员与生产监控员均可查看预览（spec.md §18.8.2 第 2 项）
   6. 响应式布局：宽屏列展开，窄屏横向滚动
   7. `npm run build` 通过
-- [ ] **对应条款**：design.md 3.6.2 / 3.7.3；spec.md 18.2 / 18.3 / 18.5.2 / 18.8.2
+- [ ] **对应条款**：design.md 3.5.2 / 3.6.2 / 3.7.3；spec.md 18.2 / 18.2.4 / 18.3 / 18.5.2 / 18.8.2 / 18.10
 
-#### 14.3.4 TASK-HWV-EV1-R4-003-04 人工录入表单
+#### 14.3.4 TASK-HWV-EV1-R4-003-04 人工录入表单（R2-AMENDMENT 箱数换算 + R4-BLOCKER-02 行5 新线）
 
-- [ ] **任务描述**：实现人工录入页面，含录入表单（日期 + 行号 + 数值）+ 已录入条目列表，支持覆盖更新
+- [ ] **任务描述**：实现人工录入页面，含录入表单（日期 + 行号 + 数值 + R2-AMENDMENT 箱数换算字段）+ 已录入条目列表，支持覆盖更新；行5 标签为"实际完成数量（新线）"不再区分白/夜班
 - [ ] **输入依赖**：TASK-HWV-EV1-R4-003-02、TASK-HWV-EV1-R4-002-07
 - [ ] **输出产物**：
   - `web/src/pages/reports/plan_input_page.tsx`（录入页）
   - `web/src/pages/reports/components/plan_input_form.tsx`（录入表单）
 - [ ] **验收标准**：
-  1. **录入表单**（PlanInputForm，design.md §3.6.3）：
+  1. **录入表单**（PlanInputForm，design.md §3.6.3 + R2-AMENDMENT + R4-BLOCKER-02）：
      - 日期选择（DatePicker，单日）
      - 行号选择（Select，选项 1-10，**排除**行6 与行9，spec.md §18.4.2 第 4 项禁止录入自动计算行）
-     - 数值输入（NumberInput，非负整数，可空）
-     - 产线选择（默认 HW102）
+     - **行号选项标签**（R4-BLOCKER-02，spec.md §18.2.2）：
+       - 行1："目标数量老线"（TARGET）
+       - 行2："实际完成数量（老线白班）"（ACTUAL）
+       - 行3："实际完成数量（老线夜班）"（ACTUAL）
+       - **行4："目标数量新线"（TARGET）**
+       - **行5："实际完成数量（新线）"（ACTUAL，不再区分白/夜班）**
+       - 行7/8/10：成品入库/出货/产线成品剩余
+     - 数值输入（NumberInput，非负整数，可空）—— 行1/4/7/8/10 传统录入模式
+     - **R2-AMENDMENT 箱数换算录入**（行2/3/5，spec.md §18.7.5）：当行号 ∈ {2, 3, 5} 时显示箱数换算字段：
+       - 产品编码（ProductCode Select，必填，三维查询维度之一）
+       - 产线选择（LineCode Select，默认 HW102，三维查询维度之一）
+       - 整箱数 carton_count（NumberInput，非负整数）
+       - 散件数 loose_quantity（NumberInput，非负整数）
+       - **units_per_carton 自动从后端三维查询获取**（调用 useEffectCartonSpec(lineCode, productCode, planDate)，R4-BLOCKER-01），只读显示
+       - **actual_quantity 自动计算显示**（= carton_count × units_per_carton + loose_quantity，只读，spec.md §18.7.5 第 7 项）
+     - **R4-BLOCKER-02 行4 TARGET**：当行号=4 时仅显示数值输入（value 字段），不显示箱数换算字段（行4 为目标数量不涉及箱数换算，spec.md §18.7.5 第 9 项）
      - 提交按钮（调用 `useCreatePlanEntry`）
-  2. **已录入条目列表**（PlanEntryTable）：展示当前日期已录入的各行值，支持点击编辑（覆盖更新，spec.md §18.4.2 第 3 项）
-  3. **交互流程**（spec.md §18.5.1）：
+  2. **已录入条目列表**（PlanEntryTable）：展示当前日期已录入的各行值，支持点击编辑（覆盖更新，spec.md §18.4.2 第 3 项）；行2/3/5 显示 actual_quantity + 辅助明细（carton_count/units_per_carton/loose_quantity）
+  3. **交互流程**（spec.md §18.5.1 + R2-AMENDMENT）：
      - 生产管理员登录 → 认证成功
-     - 选择日期 + 行号 + 数值 → 提交
+     - 选择日期 + 行号 + 数值（或箱数换算字段）→ 提交
      - 前端校验行号非 6/9（双重保障，后端亦校验）
-     - 调用录入 API → 后端 UPSERT + 审计 + 重算行6/行9
+     - 调用录入 API → 后端 UPSERT + 三维查询 units_per_carton + 计算 actual_quantity + 审计 + 重算行6/行9
      - 返回更新后报表预览（React Query invalidate 触发重新聚合）
   4. **权限控制**：仅生产管理员可访问（spec.md §18.8.2 第 1 项）；生产监控员访问该路由时重定向至报表预览页并提示权限不足
-  5. 错误处理：API 返回 409（行6/行9 录入）时提示"该行为系统自动计算，不可录入"（spec.md §18.6 第 2 项）
+  5. 错误处理：API 返回 409（行6/行9 录入）时提示"该行为系统自动计算，不可录入"（spec.md §18.6 第 2 项）；API 返回 422（请求体含 actual_quantity）时提示"actual_quantity 为系统自动计算，不可录入"（R2-AMENDMENT，spec.md §18.7.5 第 8 项）；API 返回 404（三维查询未找到生效规格）时提示"未找到该产品/产线/日期的装箱规格配置，请先配置"（R4-BLOCKER-01）
   6. `npm run build` 通过
-- [ ] **对应条款**：design.md 3.6.3；spec.md 18.4.2 / 18.5.1 / 18.6 / 18.8.2
+- [ ] **对应条款**：design.md 3.6.3 / 3.4.5；spec.md 18.4.2 / 18.5.1 / 18.6 / 18.7.4 / 18.7.5 / 18.8.2 / 18.10
 
 #### 14.3.5 TASK-HWV-EV1-R4-003-05 节假日配置页面
 
@@ -1620,15 +1828,42 @@ TG4 --> TG3
   8. `npm run build` 通过
 - [ ] **对应条款**：design.md 3.6.5；spec.md 18.4.4 / 18.6 / 18.8.2
 
+#### 14.3.7 TASK-HWV-EV1-R4-003-07 装箱规格配置页面（R2-AMENDMENT + R4-BLOCKER-01 三维适用范围）
+
+- [ ] **任务描述**：实现装箱规格配置页面，含增删改查表单（产品/产线/生效时间/每箱数量）+ 已配置规格列表，支持 R4-BLOCKER-01 三维适用范围与多规格并存（30 与 60 可同时生效）
+- [ ] **输入依赖**：TASK-HWV-EV1-R4-003-02、TASK-HWV-EV1-R4-002-10
+- [ ] **输出产物**：
+  - `web/src/pages/config/carton_spec_config_page.tsx`（配置页）
+  - `web/src/pages/config/components/carton_spec_form.tsx`（装箱规格表单）
+  - `web/src/pages/config/components/carton_spec_list.tsx`（已配置规格列表）
+- [ ] **验收标准**：
+  1. **装箱规格表单**（CartonSpecForm，design.md §3.4.4 + R4-BLOCKER-01）：
+     - 产线选择（LineCode Select，必填，三维适用范围维度之一）
+     - 产品编码（ProductCode Select，必填，三维适用范围维度之一）
+     - 每箱标准装箱数（UnitsPerCarton NumberInput，正整数，**禁止硬编码 30 或 60**，spec.md §18.7.4 第 9 项配置化优先约束）
+     - 生效起始日期（EffectiveFrom DatePicker，必填，三维适用范围维度之一）
+     - 失效日期（EffectiveTo DatePicker，可空，空表示长期生效，spec.md §18.7.4 第 5 项）
+     - 提交按钮（调用 `useCreateCartonSpec`）
+  2. **已配置规格列表**（CartonSpecList）：展示已配置的装箱规格，按 (line_code, product_code, effective_from) 排序，支持编辑/删除（调用 useUpdateCartonSpec/useDeleteCartonSpec）
+     - 每条记录显示：产线/产品/每箱数量/生效时间/失效时间/配置人/配置时间
+     - **R4-BLOCKER-01 多规格并存展示**：列表可同时显示 units_per_carton=30 与 units_per_carton=60 的记录（不同 product_code/line_code 或不同时间段），均合法生效（spec.md §18.7.4 第 11 项）
+  3. **三维查询调试面板**（可选）：提供 line_code + product_code + effective_date 三维查询输入，调用 `useEffectiveCartonSpec` 显示查询结果，便于运维验证三维查询逻辑（R4-BLOCKER-01，spec.md §18.7.4 第 10 项）
+  4. **可维护性**：装箱规格通过界面增删改查，**禁止**硬编码于源代码（spec.md §18.9.4 第 3 项装箱规格配置化规则）
+  5. **权限控制**：运维管理员或生产管理员可访问（spec.md §18.7.4 第 6 项配置人）
+  6. **时间段唯一性冲突处理**：API 返回 409（时间段重叠）时提示"同产线同产品同时间段规格唯一性冲突"（spec.md §18.7.4 第 8 项验收条件）
+  7. **删除关联记录处理**：API 返回 412（存在关联 TBL_DAILY_PRODUCTION_PLAN 记录）时提示"该规格已关联录入数据，不可删除"（design.md §3.4.4 异常映射）
+  8. `npm run build` 通过
+- [ ] **对应条款**：design.md 3.4.4 / 3.6.1；spec.md 18.7.4 / 18.9.4 / 18.10
+
 ### 14.4 TASK-HWV-EV1-R4-004 测试与验证
 
 #### 14.4.1 TASK-HWV-EV1-R4-004-01 API 集成测试
 
-- [ ] **任务描述**：编写 R4 API 集成测试，覆盖日计划 CRUD / 节假日 CRUD / 报表聚合 / Excel 导出 / 标签补打参考的端到端 HTTP 调用
-- [ ] **输入依赖**：TASK-HWV-EV1-R4-002-07、TASK-HWV-EV1-R4-001-06
-- [ ] **输出产物**：`test/integration/r4_report_api_test.go`
+- [ ] **任务描述**：编写 R4 API 集成测试，覆盖日计划 CRUD / 节假日 CRUD / 报表聚合 / Excel 导出 / 标签补打参考 / 装箱规格配置 CRUD + 三维查询的端到端 HTTP 调用
+- [ ] **输入依赖**：TASK-HWV-EV1-R4-002-07、TASK-HWV-EV1-R4-002-10、TASK-HWV-EV1-R4-001-06、TASK-HWV-EV1-R4-001-09
+- [ ] **输出产物**：`test/integration/r4_report_api_test.go`、`test/integration/r4_carton_spec_api_test.go`（R2-AMENDMENT 装箱规格配置 API 集成测试）
 - [ ] **验收标准**：
-  1. 测试用例 ≥15 条：
+  1. R4 报表 API 测试用例 ≥15 条：
      - 日计划 CRUD 全流程（创建→查询→更新→删除）
      - 日计划批量录入
      - 行6 录入返回 409
@@ -1638,36 +1873,52 @@ TG4 --> TG3
      - 节假日 CRUD 全流程（UPSERT→查询→更新→删除）
      - 节假日同日期 UPSERT 覆盖
      - 报表聚合返回完整矩阵（10 行 + 参考区域）
-     - 报表聚合行6 自动计算正确
+     - **R4-BLOCKER-02 报表聚合行6 自动计算正确**：行6 = 行2 + 行3 + 行5（不包含行4 目标数量，spec.md §18.4.1 第 4 项）
      - 报表聚合行9 自动计算正确
      - 报表聚合累计列正确
      - Excel 导出返回 .xlsx 字节流
      - Excel 导出 Content-Disposition 文件名合规
      - 标签补打参考返回 A/B/D 三行
-  2. 测试使用 httptest.NewServer 启动 Gin 路由，SQLite 内存数据库
-  3. `go test ./test/integration/... -run TestR4ReportAPI -v` 全部通过
-- [ ] **对应条款**：design.md 3.4 / 3.7；spec.md 18.4 / 18.5
+  2. **R2-AMENDMENT + R4-BLOCKER-01 装箱规格配置 API 测试用例** ≥8 条：
+     - POST /api/v1/config/carton-spec 新增配置成功
+     - POST 时间段唯一性冲突返回 409（spec.md §18.7.4 第 8 项）
+     - **R4-BLOCKER-01 多规格并存**：POST (HW102_OLD, PRODUCT_A, 60) 与 POST (HW102_NEW, PRODUCT_B, 30) 均成功，两条记录同时合法生效（spec.md §18.7.4 第 11 项）
+     - **R4-BLOCKER-01 三维查询**：GET /api/v1/config/carton-spec?line_code=HW102_NEW&product_code=PRODUCT_B&effective_date=2026-09-07 返回 units_per_carton=30（spec.md §18.7.4 第 10 项）
+     - **R4-BLOCKER-01 三维查询缺失参数返回 400**：GET 缺失 product_code 或 line_code 或 effective_date 任一参数返回 400 Bad Request（spec.md §18.7.4 第 10 项验收条件）
+     - PUT 修改配置成功
+     - DELETE 未关联记录的配置成功
+     - DELETE 已关联 TBL_DAILY_PRODUCTION_PLAN 记录的配置返回 412 Precondition Failed（design.md §3.4.4 异常映射）
+  3. **R2-AMENDMENT + R4-BLOCKER-02 日计划箱数换算录入测试**：
+     - POST 行2 carton_count=17 + loose_quantity=9 + product_code + line_code → 自动从三维查询获取 units_per_carton_snapshot，actual_quantity 自动计算（spec.md §18.7.5 第 7 项）
+     - POST 请求体含 actual_quantity 字段返回 422（spec.md §18.7.5 第 8 项）
+     - **R4-BLOCKER-02 POST 行4 含 carton_count 字段拒绝**：行4 为目标数量 TARGET 不涉及箱数换算（spec.md §18.7.5 第 9 项）
+  4. 测试使用 httptest.NewServer 启动 Gin 路由，SQLite 内存数据库
+  5. `go test ./test/integration/... -run TestR4ReportAPI -v` 与 `go test ./test/integration/... -run TestR4CartonSpecAPI -v` 全部通过
+- [ ] **对应条款**：design.md 3.4 / 3.7；spec.md 18.4 / 18.5 / 18.7.4 / 18.7.5 / 18.10
 
-#### 14.4.2 TASK-HWV-EV1-R4-004-02 业务台账基准校验（2026-09-06 E1/E2/E3/E4）
+#### 14.4.2 TASK-HWV-EV1-R4-004-02 业务台账基准校验（2026-09-06 E1/E2/E3/E4，R4-BLOCKER-02 公式修正）
 
-- [ ] **任务描述**：编写业务台账基准校验测试，录入 2026-09-06 完整台账数据后验证行6/行7/行8/行9 累计值符合 E1/E2/E3/E4 基准
+- [ ] **任务描述**：编写业务台账基准校验测试，录入 2026-09-06 完整台账数据后验证行6/行7/行8/行9 累计值符合 E1/E2/E3/E4 基准；**R4-BLOCKER-02 修正**：行6 = 行2 + 行3 + 行5（行4 目标数量新线不参与实际完成合计）
 - [ ] **输入依赖**：TASK-HWV-EV1-R4-002-08、TASK-HWV-EV1-R4-002-09
 - [ ] **输出产物**：`test/integration/r4_business_ledger_baseline_test.go`
 - [ ] **验收标准**：
-  1. 录入 2026-09-06 完整台账数据（design.md §3.5.4 业务台账基准校验）：
-     - 行2/3/4/5（实际完成四班次）合计 = 2000
-     - 行7（成品入库）= 1980（33 箱 × 60 只/箱）
+  1. 录入 2026-09-06 完整台账数据（design.md §3.5.4 业务台账基准校验 + R4-BLOCKER-02 公式修正）：
+     - **行2/3/5（实际完成三班次，R4-BLOCKER-02 新线不再区分白/夜班）合计 = 2000**（行6 = 行2 + 行3 + 行5，spec.md §18.4.1 第 4 项）
+     - 行1（目标数量老线 TARGET）录入 2000（不参与行6 计算，R4-BLOCKER-02）
+     - 行4（目标数量新线 TARGET）录入 2000（不参与行6 计算，R4-BLOCKER-02）
+     - 行7（成品入库）= 1980（33 箱 × 60 只/箱，从 TBL_CARTON_SPECIFICATION 三维查询获取 units_per_carton=60，R4-BLOCKER-01）
      - 行8（出货）= 1680（28 箱 × 60 只/箱）
      - 行10（产线成品剩余）适当录入
   2. 调用报表聚合 API，校验：
-     - 行6 累计 = E1 = 2000（spec.md §18.2.3）
+     - **行6 累计 = E1 = 2000（行2 + 行3 + 行5 实际完成之和，不含行1/行4 目标数量，R4-BLOCKER-02，spec.md §18.2.3 + §18.4.1 第 4 项）**
      - 行7 累计 = E2 = 1980
      - 行8 累计 = E3 = 1680
      - 行9 = E4 = 300（5 箱 × 60 只/箱，累计入库 - 累计出货）
+     - **R4-BLOCKER-02 行6 不包含目标数量验证**：行1=2000 + 行4=2000 + 行2/3/5=2000 → 行6=2000（而非 6000，spec.md §18.4.1 第 4 项验收条件）
   3. 校验导出 .xlsx 中对应单元格值与预览一致
   4. 该测试作为 R4 Evidence Gate 验收项（spec.md §18.10），非运行时强制断言
   5. `go test ./test/integration/... -run TestR4BusinessLedgerBaseline -v` 通过
-- [ ] **对应条款**：design.md 3.5.4；spec.md 18.2.3 / 18.10
+- [ ] **对应条款**：design.md 3.5.4；spec.md 18.2.3 / 18.4.1 / 18.10
 
 #### 14.4.3 TASK-HWV-EV1-R4-004-03 数据分离红线核对
 
@@ -1685,54 +1936,118 @@ TG4 --> TG3
 
 #### 14.4.4 TASK-HWV-EV1-R4-004-04 端到端一致性测试（预览 ↔ 导出）
 
-- [ ] **任务描述**：编写端到端测试，验证前端预览与导出 Excel 内容完全一致（数据、颜色、行列顺序）
+- [ ] **任务描述**：编写端到端测试，验证前端预览与导出 Excel 内容完全一致（数据、颜色、行列顺序 + R2-AMENDMENT 辅助列 + R4-BLOCKER-02 行4 TARGET 绿色背景）
 - [ ] **输入依赖**：TASK-HWV-EV1-R4-003-06、TASK-HWV-EV1-R4-004-01
 - [ ] **输出产物**：`test/e2e/r4_preview_export_consistency_test.go`（或 Playwright 前端 E2E）
 - [ ] **验收标准**：
   1. 录入测试数据 → 调用报表聚合 API 获取预览矩阵 → 调用导出 API 获取 .xlsx → 用 excelize 读取 .xlsx
-  2. **数据一致性**：每个单元格值预览与导出一致
-  3. **颜色一致性**：行1 绿色、行6 蓝色、节假日列黄色、累计列浅灰，预览与导出一致（spec.md §18.4.4 第 3 项导出完整性规则）
-  4. **行列顺序一致性**：10 行顺序 1→10，日期列从 start_date 递增至 end_date
-  5. **命名合规**：导出文件名含"102日产出计划"，禁含"生产数量"（spec.md §18.1.3 第 1 项）
-  6. 测试通过
-- [ ] **对应条款**：design.md 3.5.5 / 3.6.2；spec.md 18.4.4 / 18.1.3
+  2. **数据一致性**：每个单元格值预览与导出一致；**R2-AMENDMENT 行2/3/5 主显示列取 actual_quantity**（非 carton_count 原值，spec.md §18.2.4 第 3 项）
+  3. **颜色一致性**：行1 绿色、**行4 绿色（R4-BLOCKER-02 TARGET）**、行6 藍色、节假日列黄色、累计列浅灰，预览与导出一致（spec.md §18.4.4 第 3 项导出完整性规则 + §18.2.2 行4 绿色）
+  4. **行列顺序一致性**：10 行顺序 1→10，日期列从 start_date 递增至 end_date；**R4-BLOCKER-02 行顺序**：目标老线→老线白班实际→老线夜班实际→目标新线→新线实际→合计→入库→出货→库存→产线剩余
+  5. **R2-AMENDMENT 辅助列一致性**：行2/3/5 辅助列（carton_count/units_per_carton/loose_quantity/actual_quantity）预览与导出一致；行4 不显示辅助列（R4-BLOCKER-02）
+  6. **命名合规**：导出文件名含"102日产出计划"，禁含"生产数量"（spec.md §18.1.3 第 1 项）
+  7. 测试通过
+- [ ] **对应条款**：design.md 3.5.5 / 3.6.2 / 3.5.2；spec.md 18.2.2 / 18.2.4 / 18.4.4 / 18.1.3 / 18.10
+
+#### 14.4.5 TASK-HWV-EV1-R4-004-05 装箱规格三维查询测试（R4-BLOCKER-01 30/60 并存场景）
+
+- [ ] **任务描述**：编写装箱规格三维查询专项测试，验证 R4-BLOCKER-01 三维适用范围查询逻辑与多规格并存（30 与 60 可同时生效）约束
+- [ ] **输入依赖**：TASK-HWV-EV1-R4-001-09、TASK-HWV-EV1-R4-002-10
+- [ ] **输出产物**：`test/integration/r4_carton_spec_three_dim_query_test.go`
+- [ ] **验收标准**：
+  1. **R4-BLOCKER-01 多规格并存场景 setup**（spec.md §18.7.4 第 11 项 + design.md §3.3.4 配置示例）：
+     - 配置 (line_code='HW102_OLD', product_code='PRODUCT_A', units_per_carton=60, effective_from='2026-09-01')（品质部门业务证据，§18.2.3）
+     - 配置 (line_code='HW102_NEW', product_code='PRODUCT_B', units_per_carton=30, effective_from='2026-09-01')（R2-AMENDMENT 9月7日业务证据，§16.4.1）
+     - 两条记录均成功创建，同时合法生效
+  2. **R4-BLOCKER-01 三维查询测试用例** ≥6 条：
+     - GetEffectiveSpec('HW102_OLD', 'PRODUCT_A', '2026-09-07') 返回 units_per_carton=60（spec.md §18.7.4 第 10 项验收条件）
+     - GetEffectiveSpec('HW102_NEW', 'PRODUCT_B', '2026-09-07') 返回 units_per_carton=30（spec.md §18.7.4 第 10 项验收条件）
+     - GetEffectiveSpec('HW102_OLD', 'PRODUCT_A', '2026-08-31') 返回 ErrCartonSpecNotFound（未到生效日期）
+     - GetEffectiveSpec 缺失 product_code 返回 ErrInvalidQueryParams（spec.md §18.7.4 第 10 项）
+     - GetEffectiveSpec 缺失 line_code 返回 ErrInvalidQueryParams
+     - GetEffectiveSpec 缺失 effective_date 返回 ErrInvalidQueryParams
+  3. **R4-BLOCKER-01 时间段唯一性测试**：
+     - 配置 (HW102_OLD, PRODUCT_A, units_per_carton=50, effective_from='2026-09-01') 与已有记录时间重叠 → 返回 ErrCartonSpecTimeOverlap（409 Conflict，spec.md §18.7.4 第 8 项）
+     - 配置 (HW102_OLD, PRODUCT_A, units_per_carton=50, effective_from='2026-10-01')（不重叠）→ 成功
+  4. **R4-BLOCKER-01 actual_quantity 三维查询联动测试**：
+     - 录入行2 (line_code='HW102_NEW', product_code='PRODUCT_B', carton_count=17, loose_quantity=9, plan_date='2026-09-07') → 后端三维查询获取 units_per_carton=30 → actual_quantity=519（spec.md §18.2.4 第 1 项 + §18.7.5 第 7 项）
+     - 录入行7 (line_code='HW102_OLD', product_code='PRODUCT_A', carton_count=33, loose_quantity=0, plan_date='2026-09-06') → 后端三维查询获取 units_per_carton=60 → actual_quantity=1980（33 × 60 + 0，spec.md §18.2.3 E2 基准）
+  5. **R4-BLOCKER-01 源代码硬编码核对**：grep 检查整个代码库不出现 `units_per_carton = 30`、`UNITS_PER_CARTON = 60`、`units_per_carton = 60` 等硬编码常量（spec.md §18.7.4 第 9 项配置化优先约束 + §18.9.4 第 3 项）
+  6. 测试使用 SQLite 内存数据库
+  7. `go test ./test/integration/... -run TestR4CartonSpecThreeDimQuery -v` 通过
+- [ ] **对应条款**：design.md 3.3.4 / 3.4.4 / 3.9；spec.md 18.2.3 / 18.2.4 / 18.7.4 / 18.7.5 / 18.9.4 / 18.10
+
+#### 14.4.6 TASK-HWV-EV1-R4-004-06 合计公式验证测试（R4-BLOCKER-02 行6 = 行2 + 行3 + 行5）
+
+- [ ] **任务描述**：编写合计公式专项验证测试，验证 R4-BLOCKER-02 行6 实际完成合计公式修正（行6 = 行2 + 行3 + 行5，行4 目标数量新线不参与计算）
+- [ ] **输入依赖**：TASK-HWV-EV1-R4-002-08、TASK-HWV-EV1-R4-004-02
+- [ ] **输出产物**：`test/integration/r4_row6_formula_verification_test.go`
+- [ ] **验收标准**：
+  1. **R4-BLOCKER-02 行6 公式验证测试用例** ≥8 条：
+     - **基础场景**：行2/3/5 某日录入 100/200/300，行4 该日录入 500 → 行6 该日 = 600（行2+3+5，不包含行4，spec.md §18.4.1 第 4 项）
+     - **目标与实际分离场景**（spec.md §18.4.1 第 4 项验收条件）：行1 目标=2000，行4 目标=2000，行2/3/5 实际=500/500/500 → 行6 合计=1500（实际完成之和），**而非 5500**（含行1+行4 目标）
+     - **行4 不参与计算验证**：仅录入行4=1000，行2/3/5=0 → 行6=0（行4 目标数量不进入行6，R4-BLOCKER-02）
+     - **行1 不参与计算验证**：仅录入行1=1000，行2/3/5=0 → 行6=0（行1 目标数量不进入行6，R4-BLOCKER-02）
+     - **nil 视为 0**：行2=100，行3=nil，行5=200 → 行6=300
+     - **累计列验证**：行2/3/5 多日录入，行6 累计列 = SUM(行6 所有日期列) = SUM(行2+3+5 所有日期列)
+     - **行4 TARGET 标注验证**：行4 Source=MANUAL（非 CARTON_CALC），行4 无 CartonDetails（R4-BLOCKER-02，design.md §3.7.3）
+     - **行5 标签验证**：行5 行名称为"实际完成数量（新线）"（不再区分白/夜班，spec.md §18.2.2 行5 + R4-BLOCKER-02）
+  2. **R4-BLOCKER-02 行6 公式源代码核对**：grep 检查 report_service.go 中行6 计算公式为 `行2 + 行3 + 行5`，不出现 `行2 + 行3 + 行4 + 行5` 或 `行1 + 行2 + 行3 + 行4 + 行5`（spec.md §18.4.1 第 4 项实际完成合计公式约束）
+  3. **R2-AMENDMENT + R4-BLOCKER-02 行2/3/5 actual_quantity 数据来源验证**：
+     - 行2/3/5 录入 carton_count + loose_quantity → actual_quantity 自动计算 → 行6 = SUM(actual_quantity of 行2/3/5)（spec.md §18.2.4 第 3 项 + §18.4.1 第 4 项）
+     - 行6 不取 carton_count 原值（行2/3/5 经 actual_quantity 换算后才进入行6）
+  4. 测试使用 SQLite 内存数据库 + 模拟 TBL_CARTON_SPECIFICATION 配置
+  5. `go test ./test/integration/... -run TestR4Row6FormulaVerification -v` 通过
+- [ ] **对应条款**：design.md 3.4.5 / 3.5.4 / 3.7.2 / 3.7.3 / 3.9；spec.md 18.2.2 / 18.2.4 / 18.4.1 / 18.7.5 / 18.10
 
 ### 14.5 TASK-HWV-EV1-R4-005 部署与 Evidence Gate
 
 #### 14.5.1 TASK-HWV-EV1-R4-005-01 交叉编译 + 远程更新脚本
 
 - [ ] **任务描述**：扩展部署脚本支持 R4 增量更新（含 excelize 依赖交叉编译 + 远程更新 hwview-server）
-- [ ] **输入依赖**：TASK-HWV-EV1-DEPLOY-03（install_remote.sh）、TASK-HWV-EV1-R4-004-04
+- [ ] **输入依赖**：TASK-HWV-EV1-DEPLOY-03（install_remote.sh）、TASK-HWV-EV1-R4-004-04、TASK-HWV-EV1-R4-004-05、TASK-HWV-EV1-R4-004-06
 - [ ] **输出产物**：`scripts/deploy_r4.sh`（R4 增量部署脚本，PowerShell 调用，PREFERENCE_16）
 - [ ] **验收标准**：
   1. 交叉编译：`GOOS=linux GOARCH=amd64 go build -o hwview-server ./cmd/hwview-server`（含 excelize 依赖，无 CGO，design.md §3.5.1）
-  2. 前端构建：`npm run build` 产出 `web/dist/`（含 R4 报表页面）
+  2. 前端构建：`npm run build` 产出 `web/dist/`（含 R4 报表页面 + R2-AMENDMENT 装箱规格配置页面）
   3. 远程更新：scp 上传 hwview-server 二进制 + web/dist 至 192.168.2.110（spec.md §4.6.1 部署目标服务器规则）
   4. systemd 重启：`sudo systemctl restart hwview-server`（spec.md §4.6.3 部署自动化规则）
   5. **凭据注入**：部署凭据通过环境变量 `<DEPLOY_USER_PASSWORD>` / `<DEPLOY_SUDO_PASSWORD>` 注入，禁止明文（spec.md §4.3.6 / §4.6.5）
-  6. **GORM AutoMigrate 触发**：服务重启时自动建 TBL_DAILY_PRODUCTION_PLAN / TBL_HOLIDAY_CALENDAR 两张新表（design.md §3.8.3）
-  7. 部署后冒烟测试：`curl https://192.168.2.110/api/v1/reports/daily-output-plan?start_date=2026-09-05&end_date=2026-09-30` 返回 200
+  6. **GORM AutoMigrate 触发**：服务重启时自动建 3 张新表（TBL_CARTON_SPECIFICATION → TBL_DAILY_PRODUCTION_PLAN → TBL_HOLIDAY_CALENDAR，design.md §3.8.3 迁移顺序）
+  7. 部署后冒烟测试：`curl https://192.168.2.110/api/v1/reports/daily-output-plan?start_date=2026-09-05&end_date=2026-09-30` 返回 200；`curl https://192.168.2.110/api/v1/config/carton-spec?line_code=&product_code=&effective_date=` 三维查询接口可用（R2-AMENDMENT + R4-BLOCKER-01）
   8. 脚本使用 PowerShell（PREFERENCE_16），通过 sshpass 注入凭据（design.md §3 部署章节风格）
-- [ ] **对应条款**：design.md 3.8.3；spec.md 4.6 / 18.9.3
+- [ ] **对应条款**：design.md 3.8.3；spec.md 4.6 / 18.7.4 / 18.9.3 / 18.10
 
 #### 14.5.2 TASK-HWV-EV1-R4-005-02 R4 Evidence 生成
 
-- [ ] **任务描述**：生成 R4 Evidence 包，含报表预览截图 / 导出 .xlsx 文件 / 审计日志样本 / 业务台账基准校验结果
-- [ ] **输入依赖**：TASK-HWV-EV1-R4-005-01、TASK-HWV-EV1-R4-004-02、TASK-HWV-EV1-R4-004-03
+- [ ] **任务描述**：生成 R4 Evidence 包，含报表预览截图 / 导出 .xlsx 文件 / 审计日志样本 / 业务台账基准校验结果 / R4-BLOCKER-01 三维查询测试结果 / R4-BLOCKER-02 合计公式验证结果
+- [ ] **输入依赖**：TASK-HWV-EV1-R4-005-01、TASK-HWV-EV1-R4-004-02、TASK-HWV-EV1-R4-004-03、TASK-HWV-EV1-R4-004-05、TASK-HWV-EV1-R4-004-06
 - [ ] **输出产物**：`evidence/r4/` 目录：
-  - `evidence/r4/report_preview_screenshot.png`（报表预览截图）
-  - `evidence/r4/102日产出计划报表_20260905-20260930.xlsx`（导出样本）
-  - `evidence/r4/audit_log_sample.json`（审计日志样本，含 REPORT_INPUT/REPORT_EXPORT/HOLIDAY_CONFIG）
-  - `evidence/r4/business_ledger_baseline_check.md`（业务台账基准校验结果）
+  - `evidence/r4/report_preview_screenshot.png`（报表预览截图，含 R4-BLOCKER-02 行4 绿色背景）
+  - `evidence/r4/102日产出计划报表_20260905-20260930.xlsx`（导出样本，含 R2-AMENDMENT 辅助列）
+  - `evidence/r4/audit_log_sample.json`（审计日志样本，含 REPORT_INPUT/REPORT_EXPORT/HOLIDAY_CONFIG/CARTON_SPEC_CONFIG）
+  - `evidence/r4/business_ledger_baseline_check.md`（业务台账基准校验结果，R4-BLOCKER-02 公式修正）
   - `evidence/r4/data_separation_redline_check.md`（数据分离红线核对结果）
+  - `evidence/r4/carton_spec_three_dim_query_check.md`（R4-BLOCKER-01 三维查询测试结果，30 与 60 并存场景）
+  - `evidence/r4/row6_formula_verification_check.md`（R4-BLOCKER-02 合计公式验证结果，行6=行2+3+5）
   - `evidence/r4/r4_test_report.md`（R4 测试报告）
 - [ ] **验收标准**：
-  1. 报表预览截图含 10 行 × N 列矩阵 + 参考区域，颜色编码可见（绿/蓝/黄/灰）
-  2. 导出 .xlsx 文件名合规（含"102日产出计划"，禁含"生产数量"，spec.md §18.1.3 第 1 项）
-  3. 审计日志样本含三类 action：REPORT_INPUT（录入/覆盖）、REPORT_EXPORT（导出）、HOLIDAY_CONFIG（节假日配置），每条含 actor/target/change/timestamp（spec.md §18.9.2）
-  4. 业务台账基准校验结果记录：行6 累计=2000 / 行7 累计=1980 / 行8 累计=1680 / 行9=300（spec.md §18.2.3）
+  1. 报表预览截图含 10 行 × N 列矩阵 + 参考区域，颜色编码可见（绿/蓝/黄/灰 + R4-BLOCKER-02 行4 绿色）
+  2. 导出 .xlsx 文件名合规（含"102日产出计划"，禁含"生产数量"，spec.md §18.1.3 第 1 项）；含 R2-AMENDMENT 辅助列（行2/3/5 箱数/装箱规格/散件/实际件数）
+  3. 审计日志样本含四类 action：REPORT_INPUT（录入/覆盖）、REPORT_EXPORT（导出）、HOLIDAY_CONFIG（节假日配置）、**CARTON_SPEC_CONFIG（装箱规格配置，R2-AMENDMENT）**，每条含 actor/target/change/timestamp（spec.md §18.9.2）
+  4. 业务台账基准校验结果记录（R4-BLOCKER-02 公式修正）：行6 累计=2000（行2+3+5 实际完成之和，不含行1/行4 目标）/ 行7 累计=1980 / 行8 累计=1680 / 行9=300（spec.md §18.2.3 + §18.4.1 第 4 项）
   5. 数据分离红线核对结果记录：核心行不来自 TBL_PRODUCTION_RECORD.quantity 求和，标签补打数据仅入参考区域
-  6. R4 测试报告含所有 R4 测试用例执行结果（仓储单测 / service 单测 / exporter 单测 / API 集成 / 业务台账基准 / 数据分离红线 / 端到端一致性）
+  6. **R4-BLOCKER-01 三维查询测试结果记录**（spec.md §18.7.4 第 10/11 项 + §18.10）：
+     - 30 与 60 多规格并存场景验证通过（HW102_OLD/PRODUCT_A=60 与 HW102_NEW/PRODUCT_B=30 同时生效）
+     - 三维查询（product_code + line_code + effective_date）返回各自维度取值
+     - 缺失三维条件任一参数返回 400
+     - 源代码硬编码核对通过（不出现 `units_per_carton = 30` 或 `UNITS_PER_CARTON = 60` 等硬编码常量）
+  7. **R4-BLOCKER-02 合计公式验证结果记录**（spec.md §18.4.1 第 4/5 项 + §18.10）：
+     - 行6 = 行2 + 行3 + 行5 公式验证通过（行4 目标数量新线不参与计算）
+     - 行4 TARGET 标注验证通过（Source=MANUAL，绿色背景，无 CartonDetails）
+     - 行5 标签验证通过（"实际完成数量（新线）"，不再区分白/夜班）
+     - 行6 公式源代码核对通过（report_service.go 中行6 计算为 `行2 + 行3 + 行5`，不出现 `行2 + 行3 + 行4 + 行5`）
+  8. R4 测试报告含所有 R4 测试用例执行结果（仓储单测 / service 单测 / exporter 单测 / API 集成 / 业务台账基准 / 数据分离红线 / 端到端一致性 / 三维查询 / 合计公式验证）
 - [ ] **对应条款**：design.md 3.9 / 3.10；spec.md 18.10
 
 #### 14.5.3 TASK-HWV-EV1-R4-005-03 PM 裁决准备
@@ -1741,15 +2056,21 @@ TG4 --> TG3
 - [ ] **输入依赖**：TASK-HWV-EV1-R4-005-02
 - [ ] **输出产物**：`evidence/r4/r4_evidence_summary.md`（PM 裁决摘要）
 - [ ] **验收标准**：
-  1. 摘要含 R4 验收基准核对表（spec.md §18.10）：
+  1. 摘要含 R4 验收基准核对表（spec.md §18.10，含 R4-BLOCKER-01/02 修正项）：
      - EV1-R4 报表命名合规：命名为"102日产出计划报表"，非"生产数量报表" ✓
      - EV1-R4 数据来源分离：标签补打数据不进入核心数据行 ✓
-     - EV1-R4 业务台账基准：2026-09-06 录入后行6=2000/行7=1980/行8=1680/行9=300 ✓
-     - EV1-R4 导出格式：.xlsx 含颜色编码（黄/绿/蓝） ✓
+     - EV1-R4 业务台账基准：2026-09-06 录入后行6=2000（行2+3+5 实际完成之和，R4-BLOCKER-02）/行7=1980/行8=1680/行9=300 ✓
+     - EV1-R4 导出格式：.xlsx 含颜色编码（黄/绿/蓝 + R4-BLOCKER-02 行4 绿色） ✓
      - EV1-R4 Production Quantity FROZEN：核心行不从源系统自动推导 ✓
-  2. 摘要含 R4 红线落实核对（design.md §3.9 表格逐项）
-  3. 摘要含 R4 测试覆盖率与通过率
-  4. 摘要含 spec.md §18 → design.md §3 追溯矩阵（design.md §3.10）
+     - EV1-R4 R2-AMENDMENT 装箱规格配置化：units_per_carton 通过 CartonSpecification 管理，非硬编码 ✓
+     - EV1-R4 R2-AMENDMENT 实际件数计算：carton_count × units_per_carton + loose_quantity = actual_quantity（17×30+9=519） ✓
+     - EV1-R4 R2-AMENDMENT 合计公式修正：行6 实际完成合计不包含行1、行4 目标数量行 ✓
+     - EV1-R4 R2-AMENDMENT 装箱数歧义裁决：30 与 60 可并存（不同 product/line/时间），由 R4-BLOCKER-01 适用范围维度解决 ✓
+     - **EV1-R4 R4-BLOCKER-01 装箱规格适用范围维度**：TBL_CARTON_SPECIFICATION 支持 product_code + line_code + effective_from/to 三维适用范围，30 与 60 可并存，禁止全局常量 ✓
+     - **EV1-R4 R4-BLOCKER-02 实际完成合计公式修正**：行4 为"目标数量新线"(TARGET)非实际完成；行6 = 行2 + 行3 + 行5，禁止行1/行4 目标数量参与实际产量计算 ✓
+  2. 摘要含 R4 红线落实核对（design.md §3.9 表格逐项，含 R2-AMENDMENT + R4-BLOCKER-01/02 红线条目）
+  3. 摘要含 R4 测试覆盖率与通过率（含三维查询测试 + 合计公式验证测试）
+  4. 摘要含 spec.md §18 → design.md §3 追溯矩阵（design.md §3.10，含 R4-BLOCKER-01/02 追溯条目）
   5. 提交 PM 裁决，记录裁决结果（PASS / CONDITIONAL PASS / HOLD）与裁决理由
   6. 裁决不通过时记录跟进措施与重新裁决时间
 - [ ] **对应条款**：design.md 3.9 / 3.10；spec.md 18.10
@@ -1953,18 +2274,18 @@ TG4 --> TG3
 
 | 任务 ID | 验收标准 | 对应 Evidence |
 |---------|---------|--------------|
-| TASK-HWV-EV1-R4-001 | 2 张新表 AutoMigrate 成功；行6/行9 录入拒绝；UPSERT 覆盖生效；仓储单测 ≥13 条通过 | `evidence/r4/r4_test_report.md` 仓储单测 |
-| TASK-HWV-EV1-R4-002 | 报表聚合 ≤3s；导出 ≤5s；行6=行2+3+4+5；行9=累计入库-累计出货；核心行不来自 quantity 求和；.xlsx 含颜色编码；命名含"102日产出计划"禁含"生产数量" | `evidence/r4/r4_test_report.md` service+exporter 单测 + API 集成测试 |
-| TASK-HWV-EV1-R4-003 | 报表预览页 10 行 × N 列 + 参考区域；行1 绿/行6 蓝/节假日黄；录入表单排除行6/行9；节假日配置可增删改查；导出按钮触发浏览器下载 | `evidence/r4/report_preview_screenshot.png` + 前端 build 通过 |
-| TASK-HWV-EV1-R4-004 | API 集成测试 ≥15 条通过；业务台账基准 行6=2000/行7=1980/行8=1680/行9=300；数据分离红线核对通过；预览↔导出一致性通过 | `evidence/r4/business_ledger_baseline_check.md` + `data_separation_redline_check.md` |
-| TASK-HWV-EV1-R4-005 | 交叉编译无 CGO；远程更新成功；GORM AutoMigrate 触发建表；R4 Evidence 包完整；PM 裁决 PASS / CONDITIONAL PASS / HOLD | `evidence/r4/r4_evidence_summary.md` |
+| TASK-HWV-EV1-R4-001 | 3 张新表 AutoMigrate 成功（含 TBL_CARTON_SPECIFICATION）；行6/行9 录入拒绝；UPSERT 覆盖生效；仓储单测 ≥23 条通过（含 CartonSpecRepo 三维查询 + 30/60 并存） | `evidence/r4/r4_test_report.md` 仓储单测 |
+| TASK-HWV-EV1-R4-002 | 报表聚合 ≤3s；导出 ≤5s；**行6=行2+3+5（R4-BLOCKER-02，行4 TARGET 不参与）**；行9=累计入库-累计出货；核心行不来自 quantity 求和；.xlsx 含颜色编码（含行4 绿色）；命名含"102日产出计划"禁含"生产数量"；**装箱规格配置接口三维查询可用（R4-BLOCKER-01）** | `evidence/r4/r4_test_report.md` service+exporter 单测 + API 集成测试 |
+| TASK-HWV-EV1-R4-003 | 报表预览页 10 行 × N 列 + 参考区域；行1 绿/**行4 绿（R4-BLOCKER-02 TARGET）**/行6 蓝/节假日黄；录入表单排除行6/行9；**行5 标签"实际完成数量（新线）"不区分白/夜班（R4-BLOCKER-02）**；节假日配置可增删改查；**装箱规格配置页可增删改查（R2-AMENDMENT）**；导出按钮触发浏览器下载 | `evidence/r4/report_preview_screenshot.png` + 前端 build 通过 |
+| TASK-HWV-EV1-R4-004 | API 集成测试 ≥23 条通过；**业务台账基准 行6=2000（行2+3+5，R4-BLOCKER-02）/行7=1980/行8=1680/行9=300**；数据分离红线核对通过；预览↔导出一致性通过；**三维查询测试通过（30 与 60 并存，R4-BLOCKER-01）**；**合计公式验证测试通过（行6=行2+3+5，行4 不参与，R4-BLOCKER-02）** | `evidence/r4/business_ledger_baseline_check.md` + `data_separation_redline_check.md` + `carton_spec_three_dim_query_check.md` + `row6_formula_verification_check.md` |
+| TASK-HWV-EV1-R4-005 | 交叉编译无 CGO；远程更新成功；GORM AutoMigrate 触发建 3 张表；R4 Evidence 包完整（含 R4-BLOCKER-01/02 验收项）；PM 裁决 PASS / CONDITIONAL PASS / HOLD | `evidence/r4/r4_evidence_summary.md` |
 
-### 17.6 EV1-R4 红线 11 项禁止项核对（design.md §3.9）
+### 17.6 EV1-R4 红线核对（design.md §3.9，含 R2-AMENDMENT + R4-BLOCKER-01/02 红线）
 
 | 红线编号 | 禁止项 | 核对方法 | 对应任务 |
 |---------|--------|---------|---------|
 | R4-1 | 禁止核心行来自 TBL_PRODUCTION_RECORD.quantity 求和（R2 继承） | report_service 代码审查 + 数据分离红线测试 | TASK-HWV-EV1-R4-004-03 |
-| R4-2 | 禁止核心行自动推导（R3 继承，必须人工录入或外部导入） | 核心行数据来源审查 Source=MANUAL | TASK-HWV-EV1-R4-002-02 |
+| R4-2 | 禁止核心行自动推导（R3 继承，必须人工录入或外部导入） | 核心行数据来源审查 Source=MANUAL/CARTON_CALC | TASK-HWV-EV1-R4-002-02 |
 | R4-3 | 禁止标签补打数据进入核心行（FROZEN） | 参考区域独立 + 数据来源标注 REFERENCE | TASK-HWV-EV1-R4-004-03 |
 | R4-4 | 禁止报表命名含"生产数量" | 文件名/界面标题/API 路径 grep 检查 | TASK-HWV-EV1-R4-002-09 |
 | R4-5 | 禁止与标签补打记录报表合并 | 报表结构审查核心矩阵与参考区域分属不同区块 | TASK-HWV-EV1-R4-002-06 |
@@ -1972,19 +2293,25 @@ TG4 --> TG3
 | R4-7 | 禁止人工录入行6/行9 | 录入接口 409 + 前端表单排除选项 | TASK-HWV-EV1-R4-002-07 |
 | R4-8 | 禁止两类数据混排 | report_service 物理隔离编排 + 数据来源标注 | TASK-HWV-EV1-R4-002-02 |
 | R4-9 | 禁止导出 Excel 与前端预览不一致 | 端到端一致性测试 | TASK-HWV-EV1-R4-004-04 |
-| R4-10 | 禁止录入/覆盖/导出无审计 | TBL_AUDIT_LOG 记录三类 action | TASK-HWV-EV1-R4-002-07 |
+| R4-10 | 禁止录入/覆盖/导出无审计 | TBL_AUDIT_LOG 记录四类 action（含 CARTON_SPEC_CONFIG） | TASK-HWV-EV1-R4-002-07 / TASK-HWV-EV1-R4-002-10 |
 | R4-11 | 禁止硬编码节假日 | TBL_HOLIDAY_CALENDAR 配置表 + CRUD + 配置页 | TASK-HWV-EV1-R4-003-05 |
+| **R4-12（R2-AMENDMENT）** | **禁止 units_per_carton 硬编码于源代码/配置文件常量/Adapter 内** | 源代码 grep 检查不出现 `units_per_carton = 30` 或 `UNITS_PER_CARTON = 60` 等硬编码常量；均经 TBL_CARTON_SPECIFICATION 配置对象读取 | TASK-HWV-EV1-R4-001-08 / TASK-HWV-EV1-R4-004-05 |
+| **R4-13（R2-AMENDMENT）** | **禁止 actual_quantity 人工录入** | 录入接口拒绝请求体含 actual_quantity 字段（返回 422）+ 前端表单不提供 actual_quantity 输入框 | TASK-HWV-EV1-R4-001-04 / TASK-HWV-EV1-R4-003-04 |
+| **R4-14（R4-BLOCKER-01）** | **禁止将 30 或 60 作为全局单一常量；禁止仅按单一维度或全局查询 units_per_carton** | TBL_CARTON_SPECIFICATION 三维字段 + 唯一索引 + 三维查询接口 + 多规格并存测试（30 与 60 并存）+ GET 查询缺失三维条件返回 400 | TASK-HWV-EV1-R4-001-07 / TASK-HWV-EV1-R4-001-08 / TASK-HWV-EV1-R4-002-10 / TASK-HWV-EV1-R4-004-05 |
+| **R4-15（R4-BLOCKER-02）** | **禁止行1/行4 目标数量参与实际完成合计计算；禁止行6 公式包含行4** | report_service 行6 计算公式为 `行2 + 行3 + 行5`（grep 检查不出现 `行2 + 行3 + 行4 + 行5`）+ 合计公式验证测试 + 行4 TARGET 标注 | TASK-HWV-EV1-R4-002-03 / TASK-HWV-EV1-R4-004-06 |
+| **R4-16（R4-BLOCKER-02）** | **禁止行4 涉及箱数换算；禁止行4 写入 carton_count/units_per_carton_snapshot/loose_quantity/actual_quantity 字段** | DailyProductionPlanRepo 行4 录入拒绝 carton_count 字段 + 行4 Source=MANUAL（非 CARTON_CALC）+ 行4 无 CartonDetails | TASK-HWV-EV1-R4-001-04 / TASK-HWV-EV1-R4-002-02 / TASK-HWV-EV1-R4-003-04 |
 
-### 17.7 R4 业务台账基准与导出格式核对
+### 17.7 R4 业务台账基准与导出格式核对（R4-BLOCKER-02 公式修正）
 
 | 维度 | 基准值 | 核对方法 | 对应任务 |
 |------|--------|---------|---------|
-| 行6 合计（实际完成）E1 | 2000 | 录入 2026-09-06 完整台账后行6 累计 | TASK-HWV-EV1-R4-004-02 |
-| 行7 成品入库 E2 | 1980（33 箱 × 60 只/箱） | 行7 累计 | TASK-HWV-EV1-R4-004-02 |
+| 行6 合计（实际完成）E1 | 2000（**行2+3+5 实际完成之和，不含行1/行4 目标，R4-BLOCKER-02**） | 录入 2026-09-06 完整台账后行6 累计 | TASK-HWV-EV1-R4-004-02 / TASK-HWV-EV1-R4-004-06 |
+| 行7 成品入库 E2 | 1980（33 箱 × 60 只/箱，**units_per_carton=60 从 TBL_CARTON_SPECIFICATION 三维查询获取，R4-BLOCKER-01**） | 行7 累计 | TASK-HWV-EV1-R4-004-02 |
 | 行8 出货 E3 | 1680（28 箱 × 60 只/箱） | 行8 累计 | TASK-HWV-EV1-R4-004-02 |
 | 行9 成品库存 E4 | 300（5 箱 × 60 只/箱） | 累计入库 - 累计出货 | TASK-HWV-EV1-R4-004-02 |
-| 箱容量 | 60 只/箱 | 品质部确认基准 | TASK-HWV-EV1-R4-004-02 |
-| 导出格式 | .xlsx 含颜色编码（黄/绿/蓝） | excelize 读取校验 | TASK-HWV-EV1-R4-002-09 |
+| 箱容量 | 60 只/箱（品质部确认基准，§18.2.3）+ 30 件/箱（R2-AMENDMENT 9月7日证据，§16.4.1） | **R4-BLOCKER-01 多规格并存**：30 与 60 可同时生效（不同 product/line/时间） | TASK-HWV-EV1-R4-001-08 / TASK-HWV-EV1-R4-004-05 |
+| R2-AMENDMENT 实际件数计算 | carton_count × units_per_carton + loose_quantity = actual_quantity（17×30+9=519） | 录入 carton_count=17 + loose_quantity=9 → actual_quantity 自动计算为 519 | TASK-HWV-EV1-R4-001-04 / TASK-HWV-EV1-R4-004-01 |
+| 导出格式 | .xlsx 含颜色编码（黄/绿/蓝 + **行4 绿色 R4-BLOCKER-02**） | excelize 读取校验 | TASK-HWV-EV1-R4-002-09 |
 | 导出文件名 | `102日产出计划报表_YYYYMMDD-YYYYMMDD.xlsx` | Content-Disposition 校验 | TASK-HWV-EV1-R4-002-09 |
 | 报表预览响应 | ≤3s（95 分位，30 日列） | 性能测试 | TASK-HWV-EV1-R4-002-08 |
 | Excel 导出耗时 | ≤5s（95 分位，30 日范围） | 性能测试 | TASK-HWV-EV1-R4-002-09 |
@@ -2010,16 +2337,16 @@ TG4 --> TG3
 | 10. 前端 Dashboard | 4 | 4 | 阶段 2（支链并行） |
 | 11. 部署任务 | 3 | 3 | 阶段 2（支链并行） |
 | 12. EV2 Agent 接口预定义 | 3 | 3 | 阶段 2（支链并行） |
-| 13. EV1-R4 报表数据库层 | 1 | 6 | 阶段 2.5（R4 增量） |
-| 14. EV1-R4 报表后端服务 | 1 | 9 | 阶段 2.5（R4 增量） |
-| 15. EV1-R4 报表前端 | 1 | 6 | 阶段 2.5（R4 增量） |
-| 16. EV1-R4 测试与验证 | 1 | 4 | 阶段 2.5（R4 增量） |
+| 13. EV1-R4 报表数据库层 | 1 | 9 | 阶段 2.5（R4 增量） |
+| 14. EV1-R4 报表后端服务 | 1 | 10 | 阶段 2.5（R4 增量） |
+| 15. EV1-R4 报表前端 | 1 | 7 | 阶段 2.5（R4 增量） |
+| 16. EV1-R4 测试与验证 | 1 | 6 | 阶段 2.5（R4 增量） |
 | 17. EV1-R4 部署与 Evidence Gate | 1 | 3 | 阶段 2.5（R4 增量） |
 | 18. 测试与验证 | 4 | 4 | 阶段 3 |
 | 19. Evidence Gate | 4 | 4 | 阶段 4 |
-| **合计** | **40** | **83** | **6 个阶段** |
+| **合计** | **40** | **90** | **6 个阶段** |
 
-> R4 增量统计：5 个主任务 / 28 个子任务（数据库层 6 + 后端服务 9 + 前端 6 + 测试 4 + 部署 Gate 3），覆盖 spec.md §18 全部需求条款与 design.md §3.1-§3.10 全部设计章节。
+> R4 增量统计：5 个主任务 / 35 个子任务（数据库层 9 + 后端服务 10 + 前端 7 + 测试 6 + 部署 Gate 3），覆盖 spec.md §18 全部需求条款（含 R2-AMENDMENT + R4-BLOCKER-01/02 修正）与 design.md §3.1-§3.10 全部设计章节。
 
 ### 18.2 执行顺序（严格遵循 spec.md 第 14.1 章 + R4 增量）
 
@@ -2040,10 +2367,10 @@ TG4 --> TG3
   ∥ DEPLOY-01→DEPLOY-02→DEPLOY-03
   ∥ EV2-01→EV2-02→EV2-03
 阶段 2.5（EV1-R4 报表增量）：
-  R4-001-01∥R4-001-02 → R4-001-03 → R4-001-04∥R4-001-05 → R4-001-06
-  → R4-002-01 → R4-002-02 → R4-002-03∥R4-002-04 → R4-002-05 → R4-002-06 → R4-002-07 → R4-002-08∥R4-002-09
-  → R4-003-01 → R4-003-02 → R4-003-03 → R4-003-04∥R4-003-05 → R4-003-06
-  → R4-004-01∥R4-004-02∥R4-004-03 → R4-004-04
+  R4-001-01∥R4-001-02∥R4-001-07 → R4-001-03 → R4-001-04∥R4-001-05∥R4-001-08 → R4-001-06∥R4-001-09
+  → R4-002-01 → R4-002-02 → R4-002-03∥R4-002-04 → R4-002-05 → R4-002-06 → R4-002-07 → R4-002-10 → R4-002-08∥R4-002-09
+  → R4-003-01 → R4-003-02 → R4-003-03 → R4-003-04∥R4-003-05∥R4-003-07 → R4-003-06
+  → R4-004-01∥R4-004-02∥R4-004-03∥R4-004-06 → R4-004-04∥R4-004-05
   → R4-005-01 → R4-005-02 → R4-005-03
 阶段 3（测试）：TEST-01→TEST-02→TEST-03→TEST-04
 阶段 4（Evidence Gate）：GATE-01→GATE-02→GATE-03→GATE-04
@@ -2054,7 +2381,7 @@ TG4 --> TG3
 
 - **里程碑 M1**：阶段 0 + 阶段 1 主链完成（TASK-HWV-EV1-001~009 全部子任务通过）
 - **里程碑 M2**：阶段 2 支链完成（Dashboard 可访问 + 部署脚本可用 + EV2 接口预定义就位）
-- **里程碑 M3（R4）**：阶段 2.5 R4 报表增量完成（5 个主任务 / 28 个子任务全部通过 + R4 Evidence Gate PM 裁决 PASS）
+- **里程碑 M3（R4）**：阶段 2.5 R4 报表增量完成（5 个主任务 / 35 个子任务全部通过 + R4 Evidence Gate PM 裁决 PASS）
 - **里程碑 M4**：阶段 3 测试全部通过（单元/集成/端到端/静态检查 + R4 测试）
 - **里程碑 M5**：阶段 4 Evidence Gate 完成，PM 裁决通过（PASS）
 
@@ -2075,17 +2402,17 @@ TG4 --> TG3
 | 10. 前端 Dashboard | 4 |
 | 11. 部署任务 | 1.5 |
 | 12. EV2 接口预定义 | 1 |
-| 13. EV1-R4 报表数据库层 | 2（2 张新表 + 2 仓储 + AutoMigrate + 单测） |
-| 14. EV1-R4 报表后端服务 | 5（report_service + excel_exporter + API + 单测，含 excelize 选型） |
-| 15. EV1-R4 报表前端 | 4（预览页 + 录入表单 + 节假日配置 + 导出按钮） |
-| 16. EV1-R4 测试与验证 | 2.5（API 集成 + 业务台账基准 + 数据分离红线 + 端到端一致性） |
+| 13. EV1-R4 报表数据库层 | 3（3 张新表 + 3 仓储 + AutoMigrate + 单测，含 R4-BLOCKER-01 三维查询） |
+| 14. EV1-R4 报表后端服务 | 6（report_service + excel_exporter + API + 装箱规格配置接口 + 单测，含 excelize 选型 + R4-BLOCKER-02 公式修正） |
+| 15. EV1-R4 报表前端 | 5（预览页 + 录入表单 + 节假日配置 + 导出按钮 + 装箱规格配置页面） |
+| 16. EV1-R4 测试与验证 | 3（API 集成 + 业务台账基准 + 数据分离红线 + 端到端一致性 + 三维查询 + 合计公式验证） |
 | 17. EV1-R4 部署与 Evidence Gate | 1.5（交叉编译 + 远程更新 + Evidence 生成 + PM 裁决） |
 | 18. 测试与验证 | 3 |
 | 19. Evidence Gate | 2 |
-| **合计** | **46.5 人天** |
+| **合计** | **49.5 人天** |
 
-> R4 增量工作量：15 人天（数据库层 2 + 后端服务 5 + 前端 4 + 测试 2.5 + 部署 Gate 1.5），相对 EV1 主链 32.5 人天增量 46%。
+> R4 增量工作量：18.5 人天（数据库层 3 + 后端服务 6 + 前端 5 + 测试 3 + 部署 Gate 1.5），相对 EV1 主链 32.5 人天增量 57%。增量较 R4-BLOCKER 修正前（15 人天）增加 3.5 人天，主因：TBL_CARTON_SPECIFICATION 三维表 + CartonSpecRepo 三维查询 + 装箱规格配置接口/页面 + 三维查询测试 + 合计公式验证测试。
 
 ---
 
-> 文档结束。本 tasks.md 将 spec.md 的需求规格与 design.md 的技术设计分解为 40 个主任务 / 83 个子任务，覆盖 9 项 TASK-HWV-EV1-001~009 + 前端 Dashboard + 部署 + EV2 接口预定义 + **EV1-R4 102日产出计划导出报表增量（5 主任务 / 28 子任务）** + 测试与验证 + Evidence Gate。R4 任务序列落实 R2/R3/FROZEN 裁决约束、数据分离红线、命名合规、业务台账基准（2026-09-06 E1/E2/E3/E4）与 R4 Evidence Gate 验收。后续代码实现由开发阶段承担，PM 按项目经理模式逐项裁决。
+> 文档结束。本 tasks.md 将 spec.md 的需求规格与 design.md 的技术设计分解为 40 个主任务 / 90 个子任务，覆盖 9 项 TASK-HWV-EV1-001~009 + 前端 Dashboard + 部署 + EV2 接口预定义 + **EV1-R4 102日产出计划导出报表增量（5 主任务 / 35 子任务，含 R2-AMENDMENT 箱数换算 + R4-BLOCKER-01 三维适用范围 + R4-BLOCKER-02 合计公式修正）** + 测试与验证 + Evidence Gate。R4 任务序列落实 R2/R3/FROZEN 裁决约束、数据分离红线、命名合规、业务台账基准（2026-09-06 E1/E2/E3/E4）与 R4 Evidence Gate 验收。后续代码实现由开发阶段承担，PM 按项目经理模式逐项裁决。
