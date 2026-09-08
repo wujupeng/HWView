@@ -54,3 +54,56 @@ export interface OverviewStatistics {
   total_line_count: number;
   lines: DailyStatistics[];
 }
+
+export interface ReportResponse {
+  title: string;
+  dates: string[];
+  row_names: string[];
+  row_colors: string[];
+  matrix: (number | null)[][];
+  cumulative: number[];
+  holidays: Record<string, string>;
+  reference?: ReferenceData;
+}
+
+export interface ReferenceData {
+  description: string;
+  per_date: Record<string, Record<string, number>>;
+}
+
+export interface DailyProductionPlan {
+  id: number;
+  plan_date: string;
+  row_no: number;
+  value?: number | null;
+  carton_count?: number | null;
+  units_per_carton_snapshot?: number | null;
+  loose_quantity?: number | null;
+  actual_quantity?: number | null;
+  line_code: string;
+  input_by: string;
+  input_at: string;
+  updated_at: string;
+}
+
+export interface HolidayCalendar {
+  id: number;
+  holiday_date: string;
+  holiday_name: string;
+  is_rest: boolean;
+  config_by: string;
+  config_at: string;
+  updated_at: string;
+}
+
+export interface CartonSpecification {
+  id: number;
+  line_code: string;
+  product_code: string;
+  units_per_carton: number;
+  effective_from: string;
+  effective_to?: string | null;
+  config_by: string;
+  config_at: string;
+  updated_at: string;
+}
