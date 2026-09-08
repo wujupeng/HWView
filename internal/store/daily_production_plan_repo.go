@@ -89,3 +89,36 @@ func (r *DailyProductionPlanRepo) Delete(ctx context.Context, id int64) error {
 	}
 	return nil
 }
+
+func (r *DailyProductionPlanRepo) SumCartonCountByDateAndLine(ctx context.Context, planDate, lineCode string) (int64, error) {
+	if lineCode == "" {
+		lineCode = "HW102"
+	}
+	var sum int64
+	err := r.db.WithContext(ctx).Model(&model.DailyProductionPlan{}).
+		Where("DATE(plan_date) = ? AND line_code = ? AND actual_quantity IS NOT NULL", planDate, lineCode).
+		Select("COALESCE(SUM(carton_count), 0)").Scan(&sum).Error
+	return sum, err
+}
+
+func (r *DailyProductionPlanRepo) SumActualQuantityByDateAndLine(ctx context.Context, planDate, lineCode string) (int64, error) {
+	if lineCode == "" {
+		lineCode = "HW102"
+	}
+	var sum int64
+	err := r.db.WithContext(ctx).Model(&model.DailyProductionPlan{}).
+		Where("DATE(plan_date) = ? AND line_code = ? AND actual_quantity IS NOT NULL", planDate, lineCode).
+		Select("COALESCE(SUM(actual_quantity), 0)").Scan(&sum).Error
+	return sum, err
+}
+
+func (r *DailyProductionPlanRepo) HasPlanForDateAndLine(ctx context.Context, planDate, lineCode string) (bool, error) {
+	if lineCode == "" {
+		lineCode = "HW102"
+	}
+	var count int64
+	err := r.db.WithContext(ctx).Model(&model.DailyProductionPlan{}).
+		Where("DATE(plan_date) = ? AND line_code = ? AND actual_quantity IS NOT NULL", planDate, lineCode).
+		Count(&count).Error
+	return count > 0, err
+}

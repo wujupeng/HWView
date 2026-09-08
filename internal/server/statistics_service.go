@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"net/http"
 	"time"
 
@@ -14,13 +15,14 @@ import (
 type StatisticsService struct {
 	db            *gorm.DB
 	recordRepo    *store.ProductionRecordRepo
+	planRepo      *store.DailyProductionPlanRepo
 	lineRepo      *store.ProductionLineRepo
 	shadow        bool
 	quantityLabel string
 }
 
-func NewStatisticsService(db *gorm.DB, recordRepo *store.ProductionRecordRepo, lineRepo *store.ProductionLineRepo, shadow bool, quantityLabel string) *StatisticsService {
-	return &StatisticsService{db: db, recordRepo: recordRepo, lineRepo: lineRepo, shadow: shadow, quantityLabel: quantityLabel}
+func NewStatisticsService(db *gorm.DB, recordRepo *store.ProductionRecordRepo, planRepo *store.DailyProductionPlanRepo, lineRepo *store.ProductionLineRepo, shadow bool, quantityLabel string) *StatisticsService {
+	return &StatisticsService{db: db, recordRepo: recordRepo, planRepo: planRepo, lineRepo: lineRepo, shadow: shadow, quantityLabel: quantityLabel}
 }
 
 type DailyStatsResponse struct {
@@ -69,7 +71,7 @@ func (s *StatisticsService) GetOverviewStats(ctx context.Context, date string) (
 		resp.Lines = append(resp.Lines, *stats)
 		resp.TotalBoxCount += stats.BoxCount
 		resp.TotalPieceCount += stats.PieceCount
-		if stats.BoxCount > 0 {
+		if stats.BoxCount > 0 || stats.PieceCount > 0 {
 			resp.OnlineLineCount++
 		}
 	}
@@ -77,11 +79,11 @@ func (s *StatisticsService) GetOverviewStats(ctx context.Context, date string) (
 }
 
 func (s *StatisticsService) computeLineStats(ctx context.Context, line *model.ProductionLine, date string) (*DailyStatsResponse, error) {
-	boxCount, err := s.recordRepo.CountByLineAndDate(ctx, line.ID, date)
+	boxCount, err := s.planRepo.SumCartonCountByDateAndLine(ctx, date, line.LineCode)
 	if err != nil {
 		return nil, err
 	}
-	pieceCount, err := s.recordRepo.SumQuantityByLineAndDate(ctx, line.ID, date)
+	pieceCount, err := s.planRepo.SumActualQuantityByDateAndLine(ctx, date, line.LineCode)
 	if err != nil {
 		return nil, err
 	}
@@ -90,13 +92,21 @@ func (s *StatisticsService) computeLineStats(ctx context.Context, line *model.Pr
 		return nil, err
 	}
 
-	var firstAt, lastAt time.Time
+	var firstAt, lastAt sql.NullTime
 	s.db.WithContext(ctx).Model(&model.ProductionRecord{}).
 		Where("line_id = ? AND production_date = ?", line.ID, date).
 		Select("MIN(created_at)").Scan(&firstAt)
 	s.db.WithContext(ctx).Model(&model.ProductionRecord{}).
 		Where("line_id = ? AND production_date = ?", line.ID, date).
 		Select("MAX(created_at)").Scan(&lastAt)
+
+	firstStr, lastStr := "", ""
+	if firstAt.Valid {
+		firstStr = firstAt.Time.Format("2006-01-02 15:04:05")
+	}
+	if lastAt.Valid {
+		lastStr = lastAt.Time.Format("2006-01-02 15:04:05")
+	}
 
 	return &DailyStatsResponse{
 		LineID:            line.ID,
@@ -106,8 +116,8 @@ func (s *StatisticsService) computeLineStats(ctx context.Context, line *model.Pr
 		BoxCount:          boxCount,
 		PieceCount:        pieceCount,
 		BatchCount:        batchCount,
-		FirstProductionAt: firstAt.Format("2006-01-02 15:04:05"),
-		LastProductionAt:  lastAt.Format("2006-01-02 15:04:05"),
+		FirstProductionAt: firstStr,
+		LastProductionAt:  lastStr,
 		ShadowMode:        s.shadow,
 		QuantityLabel:     s.quantityLabel,
 	}, nil
