@@ -9,9 +9,9 @@ import (
 )
 
 var (
-	ErrCartonSpecNotFound  = errors.New("carton specification not found")
-	ErrCartonSpecConflict  = errors.New("carton specification conflict: line_code + product_code + effective_from already exists")
-	ErrCartonSpecInUse     = errors.New("carton specification is in use by existing production plan records")
+	ErrCartonSpecNotFound = errors.New("carton specification not found")
+	ErrCartonSpecConflict = errors.New("carton specification conflict: line_code + product_code + effective_from already exists")
+	ErrCartonSpecInUse    = errors.New("carton specification is in use by existing production plan records")
 )
 
 type CartonSpecRepo struct {

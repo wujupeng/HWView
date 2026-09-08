@@ -32,8 +32,8 @@ func NewReportService(db *gorm.DB, auditSvc *audit.Service) *ReportService {
 	}
 }
 
-func (s *ReportService) RegisterRoutes(rg *gin.RouterGroup) {
-	reports := rg.Group("/reports")
+func (s *ReportService) RegisterRoutes(rg *gin.RouterGroup, authMW ...gin.HandlerFunc) {
+	reports := rg.Group("/reports", authMW...)
 	{
 		reports.GET("/daily-output-plan", s.getReport)
 		reports.GET("/daily-output-plan/export", s.exportReport)
@@ -49,7 +49,7 @@ func (s *ReportService) RegisterRoutes(rg *gin.RouterGroup) {
 		reports.DELETE("/holidays/:id", s.deleteHoliday)
 	}
 
-	config := rg.Group("/config")
+	config := rg.Group("/config", authMW...)
 	{
 		config.POST("/carton-spec", s.createCartonSpec)
 		config.GET("/carton-spec", s.listCartonSpecs)

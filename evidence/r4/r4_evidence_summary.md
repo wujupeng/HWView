@@ -70,10 +70,21 @@
 | 健康检查 `/api/v1/health` | PASS {"status":"ok"} |
 | 冒烟：报表 API / 装箱规格 API | PASS（HTTP 200） |
 
-## 7. 待 PM 裁决
+## 7. 登录访问与遗留项收口（2026-09-08 第二轮）
 
-- **建议裁决：PASS**
-- 遗留非阻塞项：
-  1. 前端 dist 未部署至 Web 服务器静态目录（仅完成构建验证，生产接入 nginx 时一并完成）。
-  2. REPORT_EXPORT 审计 actor 为空（待认证中间件贯通后自动填充）。
-  3. 业务台账基准校验（E1=2000/E2=1980/E3=1680/E4=300 全台账）依赖完整 2026-09-06 台账数据录入，当前以 09-07/09-08 真实录入数据（row1=2000/row2=305/row5=519）完成公式级验证。
+| 遗留项 | 状态 | 证据 |
+|--------|------|------|
+| 登录访问可用 | **PASS** | `POST /api/v1/auth/login`（正确 key→200+token；错误 key→401）；前端 LoginPage + RequireAuth 路由保护 + axios 自动带 X-Admin-Key；nginx 80 端口全链路 |
+| 前端 dist 静态部署（nginx） | **PASS** | nginx active，`/var/www/hwview`（index.html+assets），`/api/` 反代 127.0.0.1:8080，SPA try_files 回退 |
+| 导出/录入审计 actor 贯通 | **PASS** | 认证开启后所有 report 路由挂 RequireAdmin；审计日志 actor=admin 填充（audit_log_sample.json id≥6） |
+| E1-E4 完整业务台账基准 | **PASS** | 2026-09-06 单日：E1 row6累计=2000（1500+500+0）/ E2 row7=1980 / E3 row8=1680 / E4 row9=300（1980-1680 自动计算）；`102_daily_output_plan_baseline_2026-09-06.xlsx` |
+
+认证细节：`auth.enabled=true`，admin_key=`hwview-shadow-deploy`（服务器 /opt/hwview/config/config.yaml）；未认证访问 report API 返回 401。
+
+## 8. 待 PM 裁决
+
+- **建议裁决：PASS（遗留项已全部收口）**
+- 非阻塞备忘：
+  1. 审计 actor 当前固定为 "admin"（单管理员模式），多用户/角色细分待 EV2。
+  2. 多日累计列包含混入的历史测试数据（09-07/09-08），生产切换前建议清库或仅录真实台账。
+  3. 前端登录密钥存 localStorage（单管理员场景可接受），EV2 若引入多用户需升级为会话/token 过期机制。

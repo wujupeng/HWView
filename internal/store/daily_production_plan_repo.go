@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	ErrPlanNotFound        = errors.New("daily production plan not found")
+	ErrPlanNotFound         = errors.New("daily production plan not found")
 	ErrAutoCalcRowForbidden = errors.New("auto-calc row (6 or 9) cannot be manually entered")
 	ErrActualQuantityInput  = errors.New("actual_quantity must not be provided in input; it is auto-calculated")
 )

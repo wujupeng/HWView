@@ -96,16 +96,16 @@ func TestActualQuantityCalculation(t *testing.T) {
 	cartonCount := 17
 	looseQty := 9
 	plan := &model.DailyProductionPlan{
-		PlanDate:              "2026-09-07",
-		RowNo:                 model.RowActualNewLine,
-		CartonCount:           &cartonCount,
+		PlanDate:               "2026-09-07",
+		RowNo:                  model.RowActualNewLine,
+		CartonCount:            &cartonCount,
 		UnitsPerCartonSnapshot: &effectiveSpec.UnitsPerCarton,
-		LooseQuantity:         &looseQty,
-		LineCode:              "HW102",
-		InputBy:               "admin",
+		LooseQuantity:          &looseQty,
+		LineCode:               "HW102",
+		InputBy:                "admin",
 	}
 
-	actual := *plan.CartonCount * *plan.UnitsPerCartonSnapshot + *plan.LooseQuantity
+	actual := *plan.CartonCount**plan.UnitsPerCartonSnapshot + *plan.LooseQuantity
 	plan.ActualQuantity = &actual
 
 	if err := planRepo.Upsert(ctx, plan); err != nil {

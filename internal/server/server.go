@@ -42,12 +42,15 @@ func (s *Server) RegisterRoutes(router *gin.Engine) error {
 	api.GET("/health", s.healthHandler)
 	api.GET("/adapters", s.listAdapters)
 
+	api.POST("/auth/login", s.authMW.Login())
+	api.GET("/auth/check", s.authMW.Check())
+
 	s.lineSvc.RegisterRoutes(api, s.authMW.RequireAdmin())
 	s.srcSvc.RegisterRoutes(api, s.authMW.RequireAdmin())
 	s.statsSvc.RegisterRoutes(api)
 	s.agentSvc.RegisterRoutes(api)
 	s.healthSvc.RegisterRoutes(api)
-	s.reportSvc.RegisterRoutes(api)
+	s.reportSvc.RegisterRoutes(api, s.authMW.RequireAdmin())
 	return nil
 }
 
