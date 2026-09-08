@@ -1814,4 +1814,928 @@ echo "$(date) sudo deploy by debian" | sudo tee -a /var/log/hwview-sudo-audit.lo
 
 ---
 
-> 文档结束。本 design.md 承接 spec.md 的"要做什么"，定义"怎么做"（架构/数据/接口/流程/部署）。后续任务分解由 spec-task-agent 承担，代码实现由开发阶段承担。
+# 三、102日产出计划导出报表增量设计（EV1-R4）
+
+> 对应 spec.md §18（102日产出计划导出报表，EV1-R4 新增能力）。
+> 上游裁决约束：§16（R2 CLOSED，源系统 quantity = 补打标签数量）+ §17（R3 CLOSED，192.168.30.2 无生产数量数据源）+ Production Quantity FROZEN。
+> 设计基线：在 §一、§二（EV1 主链 2.1-2.14）已冻结设计之上增量新增，不修改已有 7 张表 DDL 与已定义接口契约。
+> 命名合规：本报表命名为"102日产出计划报表"，既非 §17.3 禁用的"生产数量报表"，亦非"标签补打记录报表"，属独立新报表类型（spec.md §18 开头命名合规性声明）。
+
+## 3.1 需求与裁决约束继承
+
+### 3.1.1 裁决约束继承（R2 / R3 / FROZEN）
+
+> 对应 spec.md §18.1.2 裁决约束继承。本子能力所有设计决策必须满足以下三项不可变约束。
+
+| 约束编号 | 约束内容 | 对设计的强制影响 | spec.md 追溯 |
+|---------|---------|----------------|-------------|
+| R2 继承 | 源系统 `192.168.30.2:86/Cron/Jili/lists/` 的 `quantity` 为补打标签数量，**禁止**作为报表"实际完成数量"行数据来源 | 报表核心 10 行（§18.2.2）数据**禁止**来自 `TBL_PRODUCTION_RECORD.quantity` 求和；标签补打数据仅可进入独立参考区域 | §16.2 / §18.1.2 第 1 项 |
+| R3 继承 | 192.168.30.2 上不存在生产数量数据源 | 报表核心数据行（目标/实际完成/入库/出货/库存）**必须**通过人工录入接口或外部系统（MES/ERP）导入获得，设计须提供人工录入 API | §17.2 / §18.1.2 第 2 项 |
+| Production Quantity FROZEN | 找到真实生产数据源前禁止自动推导生产数量 | 标签补打数据**仅**作辅助参考列或独立参考区域，**禁止**进入核心数据行；报表生成逻辑中不得存在 `核心行 ← SUM(TBL_PRODUCTION_RECORD.quantity)` 推导路径 | §18.1.2 第 3 项 |
+
+### 3.1.2 命名合规约束
+
+> 对应 spec.md §18.1.3 命名规则。违反命名规则即判 R4 不通过。
+
+1. **报表命名规则**：界面标题、导出文件名、API 路径**必须**含"102日产出计划"字样，**禁止**含"生产数量"字样（spec.md §18.1.3 第 1 项）。
+2. **报表隔离规则**：本报表与"标签补打记录报表"（§17.3 第 3 项）**禁止**合并为同一报表；两类数据分属不同区域或不同报表（spec.md §18.1.3 第 2 项）。
+3. **表命名规则**：新增表**必须**采用 `TBL_` 前缀加下划线分隔大写格式（如 `TBL_DAILY_PRODUCTION_PLAN`、`TBL_HOLIDAY_CALENDAR`，spec.md §18.9.3 第 2 项 + PREFERENCE_17）。
+
+## 3.2 需求与存量功能关系分析（R4 子范围）
+
+> 在 §1.1（EV1 主链存量分析）基础上，针对 R4 报表子能力重新对比需求与已冻结的 EV1 存量（7 张表 + 已定义接口 + 已选型技术栈），明确复用、扩展、新增边界。
+
+### 3.2.1 已实现功能复用
+
+> 以下 EV1 已冻结存量可被 R4 直接复用，无需改造。
+
+| R4 需求功能 | 复用的存量功能 | 代码位置 / 设计章节 | 匹配度 |
+|------------|--------------|-------------------|--------|
+| 标签补打参考区域数据源（A/B/C/D） | `TBL_PRODUCTION_RECORD` 已采集数据 + Statistics Engine 聚合（box_count/piece_count/记录数） | design.md §2.3.2.4 / §2.6.1 | 100% |
+| 录入/覆盖/导出审计日志 | `TBL_AUDIT_LOG` + Audit Log 模块（actor/action/target_type/change） | design.md §2.3.2.8 / §2.2.2.1 后置条件 | 100% |
+| 认证鉴权中间件 | Auth Middleware（Gin，已校验运维管理员/生产监控员） | design.md §2.2.2.1 前置条件 / §2.9.5 | 75% |
+| 后端 Web 框架与 ORM | Gin + GORM + SQLite（glebarez/sqlite 无 CGO） | design.md §2.12.1 / §2.11.1 | 100% |
+| 前端技术栈 | React 18 + TypeScript(Strict) + Vite + React Query + Recharts | design.md §2.9.1 / §2.12.2 | 100% |
+| 部署与 systemd 集成 | hwview-server.service + deploy.sh + GORM AutoMigrate 机制 | design.md §2.11.2 / §2.11.3 | 100% |
+
+**匹配度判定依据**：
+- `TBL_PRODUCTION_RECORD` 与 Statistics Engine 已实现 box_count=COUNT(DISTINCT source_id)、piece_count=SUM(quantity)、记录数聚合，恰好对应 R4 参考区域所需的 A（记录数）/B（唯一条码）/D（quantity 求和），无需新增聚合逻辑（design.md §2.6.1 SQL 直接复用）。
+- Auth Middleware 匹配度 75%：已支持运维管理员/生产监控员两角色，但 R4 需新增"生产管理员"角色（spec.md §18.8.1），需扩展角色枚举与权限判定，故非 100%。
+
+### 3.2.2 需要扩展的功能
+
+| R4 需求功能 | 复用的存量功能 | 差异说明 | 扩展方向 |
+|------------|--------------|---------|---------|
+| 生产管理员角色与录入权限 | Auth Middleware 两角色体系 | 需新增第三角色"生产管理员"，具备录入权限；生产监控员禁止录入（spec.md §18.8.2 第 1 项） | 扩展角色枚举 + 路由守卫 + 录入接口权限校验 |
+| 录入/导出审计 action | TBL_AUDIT_LOG action 字段 | 现有 action 取值 CREATE/UPDATE/DELETE/BIND/IP_CHANGED/SUDO_EXEC，需新增 REPORT_INPUT / REPORT_EXPORT / HOLIDAY_CONFIG | 扩展 action 取值枚举，DDL 无变更（VARCHAR(64) 足界） |
+| GORM AutoMigrate 注册 | 现有 migration 注册机制（design.md §2.3.2 各表迁移） | 需将新增 2 张表纳入 AutoMigrate 列表，与现有 7 张表共用同一迁移入口 | 在 `internal/store/migration/migration.go` 注册 DailyProductionPlan / HolidayCalendar |
+
+### 3.2.3 需要新增的功能或接口
+
+> 以下功能在 EV1 存量中完全没有对应实现，需从零新增。按后端/前端/导出三层分组。
+
+**后端新增**：
+- `TBL_DAILY_PRODUCTION_PLAN` 表（日产出计划录入项，spec.md §18.7.1）
+- `TBL_HOLIDAY_CALENDAR` 表（节假日日历，spec.md §18.7.2）
+- `internal/store/daily_production_plan_repo.go`（CRUD 仓储）
+- `internal/store/holiday_repo.go`（CRUD 仓储）
+- `internal/server/report_service.go`（报表聚合 + 自动计算 + 数据分离编排）
+- `internal/server/excel_exporter.go`（excelize 生成 .xlsx，含颜色编码）
+- REST API：日计划 CRUD / 节假日 CRUD / 报表聚合 / Excel 导出 / 标签补打参考数据
+
+**前端新增**：
+- `web/src/pages/reports/` 目录（报表预览页 / 录入表单 / 节假日配置）
+- 报表矩阵组件（10 行 × N 列 + 累计列，颜色编码渲染）
+- 导出按钮（调用导出 API，触发浏览器下载 .xlsx）
+
+**导出依赖新增**：
+- Go Excel 库 `excelize`（纯 Go，无 CGO，与 glebarez/sqlite 无 CGO 约束兼容，spec.md §18.9.3 第 1 项）
+
+## 3.3 数据模型设计
+
+### 3.3.1 设计目标
+
+> 对应 spec.md §18.7 数据约束 + §18.2 报表结构定义。
+
+**需支持的业务场景**：
+- 按"日期 × 行号"粒度的人工录入与覆盖更新（spec.md §18.4.2 第 2/3 项）
+- 报表矩阵聚合：10 行 × N 日列 + 累计列，含自动计算行（行6=行2+3+4+5，行9=累计入库-累计出货，spec.md §18.4.1）
+- 节假日配置与黄色标注（spec.md §18.4.3）
+- 标签补打参考区域数据聚合（A/B/C/D，来源于 TBL_PRODUCTION_RECORD，spec.md §18.7.3）
+- 数据来源分离：核心行仅来自人工录入，参考区域来自自动采集（spec.md §18.3）
+
+**性能、容量、扩展性目标**：
+- 报表预览响应 ≤3s（95 分位，30 日列 × 10 行聚合，spec.md §18.9.1 第 1 项）
+- Excel 导出 ≤5s（95 分位，30 日范围，spec.md §18.9.1 第 2 项）
+
+**与存量数据的兼容策略**：
+- 新增 2 张表与现有 7 张表通过 GORM AutoMigrate 统一管理，不修改已有表 DDL。
+- `TBL_DAILY_PRODUCTION_PLAN` 不与 `TBL_PRODUCTION_RECORD` 建立外键，物理隔离两类数据来源（落实 R2/FROZEN 约束）。
+- `TBL_HOLIDAY_CALENDAR` 独立配置，不依赖产线/数据源。
+
+### 3.3.2 TBL_DAILY_PRODUCTION_PLAN DDL（日产出计划录入表）
+
+> 对应 spec.md §18.7.1 DailyProductionPlan 数据约束。存储人工录入的核心 10 行数据（行6/行9 不存储，由系统计算）。
+
+```sql
+CREATE TABLE TBL_DAILY_PRODUCTION_PLAN (
+    id            BIGINT       PRIMARY KEY AUTOINCREMENT,
+    plan_date     DATE         NOT NULL,
+    row_no        INT          NOT NULL CHECK (row_no BETWEEN 1 AND 10),
+    value         INT,
+    line_code     VARCHAR(64)  NOT NULL DEFAULT 'HW102',
+    input_by      VARCHAR(128) NOT NULL,
+    input_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (plan_date, row_no, line_code)
+);
+
+CREATE UNIQUE INDEX UQ_PLAN_DATE_ROW_LINE ON TBL_DAILY_PRODUCTION_PLAN(plan_date, row_no, line_code);
+CREATE INDEX IDX_PLAN_DATE      ON TBL_DAILY_PRODUCTION_PLAN(plan_date);
+CREATE INDEX IDX_PLAN_LINE_DATE ON TBL_DAILY_PRODUCTION_PLAN(line_code, plan_date);
+CREATE INDEX IDX_PLAN_ROW       ON TBL_DAILY_PRODUCTION_PLAN(row_no);
+```
+
+**字段说明**：
+- `plan_date`：计划日期，格式 YYYY-MM-DD，与 row_no、line_code 共同构成唯一键（spec.md §18.7.1 第 1 项）
+- `row_no`：行号，取值 1-10，对应 §18.2.2 报表行结构（spec.md §18.7.1 第 2 项）
+- `value`：数值，可空（未录入时为 NULL，报表显示空），非负整数，单位"只"（spec.md §18.7.1 第 3 项）
+- `line_code`：产线编码，默认 'HW102'（102 产线），预留多产线扩展，不建外键以保持与 TBL_PRODUCTION_RECORD 物理隔离
+- `input_by`：录入人，生产管理员用户标识（spec.md §18.7.1 第 4 项）
+- `input_at` / `updated_at`：录入时间 / 最近更新时间戳（spec.md §18.7.1 第 5 项）
+
+**关键约束**：
+- `UNIQUE(plan_date, row_no, line_code)`：同一日期同一行同一产线仅一条记录，支持覆盖更新（spec.md §18.4.2 第 3 项录入覆盖规则）
+- **行号可录入性约束**：应用层强制禁止写入 row_no=6（合计行）与 row_no=9（库存行）的记录，该两行由系统自动计算（spec.md §18.7.1 第 6 项 + §18.4.2 第 4 项禁止项）。DDL 层不排除该两值（保留 row_no 1-10 完整性用于报表渲染），由 report_service 在写入前校验拒绝
+- **非负约束**：value 为非负整数，应用层校验（spec.md §18.7.1 第 3 项）
+
+### 3.3.3 TBL_HOLIDAY_CALENDAR DDL（节假日日历表）
+
+> 对应 spec.md §18.7.2 HolidayCalendar 数据约束。可配置的节假日清单，驱动报表黄色标注。
+
+```sql
+CREATE TABLE TBL_HOLIDAY_CALENDAR (
+    id           BIGINT       PRIMARY KEY AUTOINCREMENT,
+    holiday_date DATE         NOT NULL UNIQUE,
+    holiday_name VARCHAR(128) NOT NULL,
+    is_rest      BOOLEAN      NOT NULL DEFAULT TRUE,
+    config_by    VARCHAR(128) NOT NULL,
+    config_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX UQ_HOLIDAY_DATE ON TBL_HOLIDAY_CALENDAR(holiday_date);
+CREATE INDEX IDX_HOLIDAY_REST ON TBL_HOLIDAY_CALENDAR(is_rest);
+```
+
+**字段说明**：
+- `holiday_date`：节假日日期，格式 YYYY-MM-DD，全局唯一（spec.md §18.7.2 第 1 项）
+- `holiday_name`：节假日名称，如"中秋休息""国庆假期"（spec.md §18.7.2 第 2 项）
+- `is_rest`：是否休息，true 时报表该列黄色背景（spec.md §18.7.2 第 3 项 + §18.2.1 第 3 项节假日标注规则）
+- `config_by`：配置人，运维管理员或生产管理员用户标识（spec.md §18.7.2 第 4 项）
+- `config_at` / `updated_at`：配置时间 / 最近更新时间戳（spec.md §18.7.2 第 5 项）
+
+**关键约束**：
+- `UNIQUE(holiday_date)`：同一日期仅一条节假日配置，避免冲突（spec.md §18.6 第 3 项节假日配置冲突场景：以最后生效配置为准，由 UPSERT 实现）
+- 节假日列**允许**录入数据（如加班生产），**禁止**强制置空（spec.md §18.4.3 第 2 项）——此为应用层渲染规则，不由 DDL 强制
+
+### 3.3.4 领域对象类图
+
+> 对应 spec.md §18.7 数据约束。展示 R4 新增领域对象及与 EV1 存量对象的引用关系（物理隔离，无外键）。
+
+```plantuml
+@startuml
+title R4 报表领域对象类图
+
+class DailyProductionPlan {
+  +ID : int64
+  +PlanDate : date
+  +RowNo : int
+  +Value : *int
+  +LineCode : string
+  +InputBy : string
+  +InputAt : time
+  +UpdatedAt : time
+}
+
+class HolidayCalendar {
+  +ID : int64
+  +HolidayDate : date
+  +HolidayName : string
+  +IsRest : bool
+  +ConfigBy : string
+  +ConfigAt : time
+  +UpdatedAt : time
+}
+
+class ReportLabelReprintReference {
+  +Date : date
+  +LabelReprintProductCountB : int
+  +LabelReprintEventCountA : int
+  +ReprintLabelTotalD : int
+}
+
+class ProductionRecord <<EV1 存量>> {
+  +LineID : int64
+  +SourceID : string
+  +Quantity : int
+  +ProductionDate : date
+  +BatchNo : string
+}
+
+class AuditLog <<EV1 存量>> {
+  +Actor : string
+  +Action : string
+  +Change : text
+}
+
+note right of ReportLabelReprintReference
+  非持久化对象
+  由 Statistics Engine 聚合
+  TBL_PRODUCTION_RECORD 临时构造
+  禁止进入核心 10 行
+end note
+
+DailyProductionPlan ..> ProductionRecord : 物理隔离\n(无外键, R2/FROZEN 约束)
+ReportLabelReprintReference ..> ProductionRecord : 聚合读取\n(A/B/C/D 参考区域)
+DailyProductionPlan ..> AuditLog : 录入/覆盖审计
+HolidayCalendar ..> AuditLog : 配置审计
+
+@enduml
+```
+
+**对象关系与生命周期**：
+- `DailyProductionPlan`：持久化对象，按"日期 × 行号 × 产线"唯一，支持覆盖更新；行6/行9 不持久化（由 report_service 实时计算）
+- `HolidayCalendar`：持久化对象，按日期唯一，支持 UPSERT 覆盖
+- `ReportLabelReprintReference`：**非持久化**对象，每次报表生成时由 Statistics Engine 从 `TBL_PRODUCTION_RECORD` 聚合构造（A=记录数、B=唯一条码数、D=SUM(quantity)），仅用于参考区域渲染，**禁止**写入核心行（spec.md §18.7.3 第 5 项数据用途约束）
+
+**持久化策略**：
+- `TBL_DAILY_PRODUCTION_PLAN` 与 `TBL_HOLIDAY_CALENDAR` 通过 GORM AutoMigrate 创建，与现有 7 张表共用同一 SQLite/PostgreSQL 实例
+- `DailyProductionPlan` 与 `ProductionRecord` **物理隔离**（无外键、无 JOIN 推导核心行），从数据模型层面落实 R2/FROZEN 约束，防止标签补打数据误入核心行
+
+### 3.3.5 与现有 7 张表的协调
+
+> 对应任务要求"需与现有7张表协调，使用 GORM AutoMigrate"。明确新增表与存量表的边界与共存策略。
+
+| 新增表 | 与存量表关系 | 协调策略 |
+|--------|------------|---------|
+| TBL_DAILY_PRODUCTION_PLAN | 与 TBL_PRODUCTION_RECORD 物理隔离（无外键） | 共用 DB 实例与 AutoMigrate 入口；report_service 分别读取两表，在应用层编排数据分离，**禁止** SQL JOIN 将 quantity 求和写入核心行 |
+| TBL_DAILY_PRODUCTION_PLAN | 与 TBL_AUDIT_LOG 通过应用层关联（录入审计） | 录入/覆盖时由 report_service 写入 TBL_AUDIT_LOG（action=REPORT_INPUT，target_id=plan_date+row_no），不建物理外键 |
+| TBL_HOLIDAY_CALENDAR | 与所有存量表独立 | 纯配置表，无任何外键依赖；报表生成时由 report_service 读取并应用黄色标注 |
+| 两张新增表 | 与 TBL_PRODUCTION_LINE 弱关联（line_code 字符串） | TBL_DAILY_PRODUCTION_PLAN.line_code 默认 'HW102'，不建外键以保持物理隔离；未来多产线报表扩展时可选择关联 |
+
+**AutoMigrate 注册设计**：
+- 在 `internal/store/migration/migration.go` 的统一迁移函数中追加注册，与现有 7 张表共用同一入口，确保部署时一次性建表
+- 迁移顺序：先现有 7 张表（保持 EV1 依赖顺序），后新增 2 张表（无外键依赖，顺序无约束）
+- SQLite 与 PostgreSQL 兼容：DDL 采用标准类型（BIGINT/DATE/TIMESTAMP/BOOLEAN/VARCHAR），避免方言差异
+
+## 3.4 接口设计
+
+> 对应 spec.md §18.4 业务规则 + §18.5 交互流程 + §18.8 角色权限。接口风格继承 §2.2（RESTful + `/api/v1/` 版本前缀 + JSON + Go 强类型结构体）。
+
+### 3.4.1 总体设计
+
+> 对应 spec.md §18.4.2 人工录入 + §18.4.4 导出 + §18.3 数据来源分离。按调用方与业务域分类。
+
+| 接口分类 | 接口名称 | 调用方 | 稳定性等级 | spec.md 追溯 |
+|---------|---------|--------|-----------|-------------|
+| 日计划录入 | `POST/GET/PUT/DELETE /api/v1/reports/daily-plan/entries` | 生产管理员 | 稳定 | §18.4.2 录入规则 |
+| 日计划批量录入 | `POST /api/v1/reports/daily-plan/entries/batch` | 生产管理员 | 稳定 | §18.4.2 第 2 项录入粒度 |
+| 节假日配置 | `POST/GET/PUT/DELETE /api/v1/reports/holidays` | 运维管理员/生产管理员 | 稳定 | §18.4.3 节假日配置 |
+| 报表聚合 | `GET /api/v1/reports/daily-output-plan?start_date=&end_date=&line_code=` | 生产管理员/生产监控员 | 稳定 | §18.2 报表结构 + §18.5.2 |
+| Excel 导出 | `GET /api/v1/reports/daily-output-plan/export?start_date=&end_date=&format=xlsx` | 生产管理员/生产监控员 | 稳定 | §18.4.4 导出规则 |
+| 标签补打参考 | `GET /api/v1/reports/label-reprint-reference?start_date=&end_date=` | 生产管理员/生产监控员 | 稳定 | §18.3.2 + §18.7.3 |
+
+**接口变更策略**：
+- 全部接口含 `/api/v1/` 版本前缀，与 §2.2.1 变更策略一致
+- 导出接口返回二进制流（.xlsx），其余接口返回 JSON
+- 所有写入接口经 Auth Middleware 校验"生产管理员"角色（spec.md §18.8.2 第 1 项）；查询/导出接口允许生产监控员访问（spec.md §18.8.2 第 2 项）
+
+### 3.4.2 DailyProductionPlan CRUD 接口
+
+**接口签名**：
+```go
+// POST /api/v1/reports/daily-plan/entries
+type CreatePlanEntryRequest struct {
+    PlanDate string `json:"plan_date" binding:"required"` // YYYY-MM-DD
+    RowNo    int    `json:"row_no" binding:"required"`    // 1-10
+    Value    *int   `json:"value"`                        // 非负整数，可空
+    LineCode string `json:"line_code"`                   // 默认 HW102
+}
+
+// PUT /api/v1/reports/daily-plan/entries/{id}  (覆盖更新)
+type UpdatePlanEntryRequest struct {
+    Value *int `json:"value"`
+}
+
+type PlanEntryResponse struct {
+    ID        int64  `json:"id"`
+    PlanDate  string `json:"plan_date"`
+    RowNo     int    `json:"row_no"`
+    Value     *int   `json:"value"`
+    LineCode  string `json:"line_code"`
+    InputBy   string `json:"input_by"`
+    InputAt   string `json:"input_at"`
+    UpdatedAt string `json:"updated_at"`
+}
+```
+
+**业务说明**：按"日期 × 行号"粒度录入或覆盖核心数据行数据（spec.md §18.4.2 第 2 项录入粒度规则）。
+**前置条件**：调用者已认证且具备"生产管理员"角色（spec.md §18.8.2 第 1 项）。
+**后置条件**：
+- `TBL_DAILY_PRODUCTION_PLAN` UPSERT（UNIQUE(plan_date, row_no, line_code) 兜底）
+- `TBL_AUDIT_LOG` 记录变更（action=REPORT_INPUT，change 含旧值/新值，spec.md §18.9.2 第 1 项录入审计规则）
+- report_service 触发合计行（行6）与库存行（行9）重算（仅内存，不持久化该两行）
+
+**异常映射**：
+- `400 Bad Request`：row_no 不在 1-10；value 为负数；plan_date 格式非法
+- `403 Forbidden`：调用者非生产管理员（生产监控员尝试录入，spec.md §18.8.2 第 1 项）
+- `409 Conflict`：行号为 6 或 9（自动计算行禁止录入，spec.md §18.4.2 第 4 项禁止项 + §18.6 第 2 项异常场景）
+
+**调用示例**：
+```bash
+curl -X POST https://192.168.2.110/api/v1/reports/daily-plan/entries \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"plan_date":"2026-09-06","row_no":7,"value":1980,"line_code":"HW102"}'
+```
+
+### 3.4.3 HolidayCalendar CRUD 接口
+
+**接口签名**：
+```go
+// POST /api/v1/reports/holidays
+type CreateHolidayRequest struct {
+    HolidayDate string `json:"holiday_date" binding:"required"` // YYYY-MM-DD
+    HolidayName string `json:"holiday_name" binding:"required"`
+    IsRest      bool   `json:"is_rest"`
+}
+
+type HolidayResponse struct {
+    ID          int64  `json:"id"`
+    HolidayDate string `json:"holiday_date"`
+    HolidayName string `json:"holiday_name"`
+    IsRest      bool   `json:"is_rest"`
+    ConfigBy    string `json:"config_by"`
+    ConfigAt    string `json:"config_at"`
+}
+```
+
+**业务说明**：配置节假日清单，驱动报表黄色标注（spec.md §18.4.3 第 1 项）。
+**前置条件**：调用者已认证且具备运维管理员或生产管理员角色。
+**后置条件**：`TBL_HOLIDAY_CALENDAR` UPSERT（UNIQUE(holiday_date) 兜底，spec.md §18.6 第 3 项冲突场景以最后生效为准）；`TBL_AUDIT_LOG` 记录（action=HOLIDAY_CONFIG）。
+**异常映射**：`400`（日期格式非法/名称为空）/ `403`（权限不足）。
+
+### 3.4.4 报表数据聚合接口
+
+> 对应 spec.md §18.5.2 报表生成与导出流程前半段。聚合人工录入数据 + 标签补打参考数据 + 自动计算行 + 节假日标注，返回完整报表矩阵供前端预览。
+
+**接口签名**：
+```go
+// GET /api/v1/reports/daily-output-plan?start_date=2026-09-05&end_date=2026-09-30&line_code=HW102
+type DailyOutputPlanReportResponse struct {
+    LineCode   string         `json:"line_code"`
+    StartDate  string         `json:"start_date"`
+    EndDate    string         `json:"end_date"`
+    Dates      []string       `json:"dates"`      // 列：日期序列 ["2026-09-05",...,"2026-09-30"]
+    Holidays   map[string]HolidayResponse `json:"holidays"` // 日期→节假日配置
+    CoreRows   []ReportRow    `json:"core_rows"`  // 10 个核心数据行
+    Reference  ReportReferenceArea `json:"reference"` // 标签补打参考区域
+    GeneratedAt string       `json:"generated_at"`
+}
+
+type ReportRow struct {
+    RowNo    int     `json:"row_no"`     // 1-10
+    RowName  string  `json:"row_name"`   // §18.2.2 行名称
+    Values   []*int  `json:"values"`     // 各日期列值（nil=未录入）
+    Total    int     `json:"total"`      // 累计列：该行所有日期值之和
+    IsAuto   bool    `json:"is_auto"`    // 是否自动计算行（行6/行9）
+    Source   string  `json:"source"`     // 数据来源标注：MANUAL / AUTO_CALC / REFERENCE
+}
+
+type ReportReferenceArea struct {
+    Dates []string               `json:"dates"`
+    Rows  []ReportReferenceRow   `json:"rows"` // A/B/D 三行参考数据
+}
+
+type ReportReferenceRow struct {
+    Code   string  `json:"code"`   // "A"=事件数 / "B"=产品数 / "D"=标签总数
+    Name   string  `json:"name"`
+    Values []*int  `json:"values"` // 各日期列值（来源于 TBL_PRODUCTION_RECORD 聚合）
+    Total  int     `json:"total"`
+}
+```
+
+**业务说明**：
+- 读取 `TBL_DAILY_PRODUCTION_PLAN`（核心行 1/2/3/4/5/7/8/10 人工录入值）
+- 读取 `TBL_PRODUCTION_RECORD` 聚合 A/B/D（参考区域，复用 §2.6.1 Statistics Engine SQL）
+- **自动计算行6**：行6[d] = 行2[d] + 行3[d] + 行4[d] + 行5[d]，按日列分别求和（spec.md §18.4.1 第 2 项）
+- **自动计算行9**：行9[d] = 累计入库(行7 截至 d) - 累计出货(行8 截至 d)，按日列累计差（spec.md §18.4.1 第 3 项）
+- **累计列**：每行 Total = SUM(该行所有日期 Values)（spec.md §18.4.1 第 1 项）
+- 读取 `TBL_HOLIDAY_CALENDAR` 应用黄色标注（is_rest=true 的日期列）
+- **数据来源标注**：核心行 Source=MANUAL（行6/行9 为 AUTO_CALC），参考区域 Source=REFERENCE，前端据此渲染数据来源标签（spec.md §18.3 数据来源分离）
+
+**前置条件**：调用者已认证（生产管理员或生产监控员均可，spec.md §18.8.2 第 2 项）。
+**后置条件**：无（只读聚合查询）。
+**异常映射**：`400`（日期格式非法/起止顺序倒置）/ `504`（查询超时，返回部分数据）。
+**性能约束**：响应 ≤3s（95 分位，30 日列 × 10 行聚合，spec.md §18.9.1 第 1 项）。
+
+### 3.4.5 Excel 导出接口
+
+> 对应 spec.md §18.4.4 导出规则 + §18.5.2 流程后半段。生成 .xlsx 二进制流，保留颜色编码。
+
+**接口签名**：
+```go
+// GET /api/v1/reports/daily-output-plan/export?start_date=2026-09-05&end_date=2026-09-30&format=xlsx
+// 响应：Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+//       Content-Disposition: attachment; filename="102日产出计划报表_20260905-20260930.xlsx"
+type ExportReportQuery struct {
+    StartDate string `form:"start_date" binding:"required"`
+    EndDate   string `form:"end_date" binding:"required"`
+    LineCode  string `form:"line_code"`   // 默认 HW102
+    Format    string `form:"format"`      // 仅支持 xlsx
+}
+```
+
+**业务说明**：调用 report_service 聚合报表矩阵（同 §3.4.4），交由 excel_exporter 生成 .xlsx，返回二进制流供浏览器下载（spec.md §18.4.4 第 1 项导出格式规则）。
+**前置条件**：调用者已认证（生产管理员或生产监控员，spec.md §18.8.2 第 2 项导出权限规则）。
+**后置条件**：`TBL_AUDIT_LOG` 记录导出事件（action=REPORT_EXPORT，change 含日期范围，spec.md §18.9.2 第 2 项导出权限审计规则）。
+**异常映射**：`400`（日期格式非法）/ `415`（format 非 xlsx）/ `500`（Excel 生成异常，spec.md §18.6 第 4 项导出失败场景：中止导出、记录错误日志、保留前端预览）。
+**性能约束**：导出 ≤5s（95 分位，30 日范围，spec.md §18.9.1 第 2 项）。
+**命名约束**：文件名必须形如 `102日产出计划报表_YYYYMMDD-YYYYMMDD.xlsx`，禁止含"生产数量"字样（spec.md §18.4.4 第 2 项导出命名规则）。
+
+### 3.4.6 标签补打参考数据接口
+
+> 对应 spec.md §18.3.2 自动填充范围 + §18.7.3 ReportLabelReprintReference。独立暴露参考区域数据，供前端独立渲染与数据来源审计。
+
+**接口签名**：
+```go
+// GET /api/v1/reports/label-reprint-reference?start_date=2026-09-05&end_date=2026-09-30
+type LabelReprintReferenceResponse struct {
+    Dates []string                  `json:"dates"`
+    Rows  []LabelReprintReferenceRow `json:"rows"`
+}
+
+type LabelReprintReferenceRow struct {
+    Code   string  `json:"code"`   // "A" / "B" / "D"
+    Name   string  `json:"name"`   // 标签补打事件数 / 标签补打产品数 / 补打标签总数
+    Values []*int  `json:"values"` // 各日期列值
+    Total  int     `json:"total"`
+    Source string  `json:"source"` // 固定 "REFERENCE"
+}
+```
+
+**业务说明**：从 `TBL_PRODUCTION_RECORD` 聚合 A（记录数）/B（唯一条码数 COUNT(DISTINCT barcode)）/D（SUM(quantity)），按日期序列返回（spec.md §18.7.3）。复用 §2.6.1 Statistics Engine 聚合 SQL。
+**前置条件**：调用者已认证。
+**后置条件**：无（只读聚合）。
+**数据用途约束**：本接口数据**禁止**被 report_service 写入核心数据行，仅用于参考区域（spec.md §18.7.3 第 5 项 + §18.3.1 数据分离规则）。该约束由 report_service 内部编排逻辑保证，接口本身不提供写入核心行的能力。
+
+## 3.5 Excel 导出实现设计
+
+> 对应 spec.md §18.4.4 导出规则 + §18.9.3 第 1 项技术栈约束（Go 生态成熟库）。
+
+### 3.5.1 Excel 库选型
+
+**选型决策**：采用 `github.com/xuri/excelize/v2`（excelize）。
+
+**选择理由**：
+- **纯 Go 实现，无 CGO 依赖**：与现有 `glebarez/sqlite`（无 CGO）约束兼容，保持构建链纯净（spec.md §18.9.3 第 1 项 + 任务要求"excelize 或类似纯Go库"）
+- **成熟活跃**：Go 生态最主流的 Excel 库，支持 .xlsx 读写、单元格样式、颜色填充、合并单元格、公式
+- **样式能力满足需求**：支持单元格背景色（黄/绿/蓝）、字体、边框，满足 §18.2.2 颜色编码规则
+- **流式写入**：支持 StreamWriter，应对大日期范围（如年度报表）性能需求
+
+**备选与排除**：
+- `tealeg/xlsx`：维护活跃度下降，排除
+- `qax-os/excelize`：已迁移至 `xuri/excelize`，采用新仓库
+- CGO 依赖库（如 libxlsxwriter 绑定）：违反无 CGO 约束，排除
+
+### 3.5.2 报表矩阵结构
+
+> 对应 spec.md §18.2 报表结构定义。10 行 × N 列 + 累计列。
+
+**矩阵布局**（以 9/5-9/30 共 26 日为例）：
+
+| 区域 | 行/列范围 | 内容 |
+|------|----------|------|
+| 标题行 | 行1 | "102日产出计划报表（2026-09-05 至 2026-09-30）" 合并单元格 |
+| 表头行 | 行2 | 列1="行名称" / 列2..列27=日期(9/5..9/30) / 列28="累计数量" |
+| 核心数据行 | 行3-行12 | 10 个核心行（§18.2.2 顺序），各日期列值 + 累计列 |
+| 参考区域标题 | 行14 | "标签补打参考区域（数据来源：TBL_PRODUCTION_RECORD 自动采集）" |
+| 参考数据行 | 行15-行17 | A/B/D 三行参考数据 + 累计列 |
+| 数据来源说明 | 行19 | "核心数据行来源：人工录入/MES导入；参考区域来源：自动采集（R2 裁决：禁止进入核心行）" |
+
+**行顺序冻结**（spec.md §18.2.2 第 1 项行顺序规则，禁止调整）：
+1. 目标数量老线 → 2. 实际完成（老线白班）→ 3. 实际完成（老线夜班）→ 4. 实际完成（新线白班）→ 5. 实际完成（新线夜班）→ 6. 合计 → 7. 成品入库 → 8. 出货 → 9. 成品库存 → 10. 产线成品剩余
+
+### 3.5.3 颜色编码与样式
+
+> 对应 spec.md §18.2.2 第 2 项颜色编码规则 + §18.2.1 第 3 项节假日标注规则。
+
+| 样式对象 | 颜色 | excelize 样式字段 | spec.md 追溯 |
+|---------|------|------------------|-------------|
+| 行1（目标数量老线）整行 | 绿色背景 | `Fill{Type:"pattern",Color:["#92D050"]}` | §18.2.2 行1 绿色 |
+| 行6（合计）整行 | 蓝色背景 | `Fill{Type:"pattern",Color:["#BDD7EE"]}` | §18.2.2 行6 藍色 |
+| 节假日列（is_rest=true 的日期列） | 黄色背景 | `Fill{Type:"pattern",Color:["#FFE699"]}` | §18.2.1 第 3 项 + §18.4.3 第 1 项 |
+| 累计列（最右列） | 浅灰背景（辅助识别） | `Fill{Type:"pattern",Color:["#F2F2F2"]}` | §18.2.1 第 2 项累计列规则 |
+| 参考区域标题行 | 浅蓝背景 | `Fill{Type:"pattern",Color:["#DEEBF7"]}` | §18.3 数据来源分离视觉区分 |
+
+**样式应用策略**：
+- 颜色编码**必须**保留至导出 .xlsx（spec.md §18.4.4 第 1 项导出格式规则）
+- 节假日列黄色优先级高于行颜色（如行1 的节假日单元格显示黄色而非绿色，spec.md §18.4.3 第 1 项节假日标注规则优先）
+- excelize 通过 `NewStyle` 创建样式 ID，按行列坐标 `SetCellStyle` 批量应用，避免逐单元格创建样式（性能优化）
+
+### 3.5.4 自动计算行与累计列
+
+> 对应 spec.md §18.4.1 累计计算规则。在 excel_exporter 中实现，**禁止**依赖 Excel 公式（确保导出文件打开即显示计算值，兼容只读查看器）。
+
+**行6（合计）计算**：
+- 对每个日期列 d：`行6[d] = 行2[d] + 行3[d] + 行4[d] + 行5[d]`（nil 视为 0）
+- 累计列：`行6.Total = SUM(行6 所有日期列)`
+- spec.md §18.4.1 第 2 项合计行计算规则
+
+**行9（成品库存）计算**：
+- 对每个日期列 d：`行9[d] = SUM(行7[起始..d]) - SUM(行8[起始..d])`（累计入库 - 累计出货，截至当日）
+- 累计列：`行9.Total = SUM(行7 所有日期) - SUM(行8 所有日期)`
+- spec.md §18.4.1 第 3 项库存计算规则
+
+**累计列计算**（所有行）：
+- `行X.Total = SUM(行X 所有日期列 Values)`（nil 视为 0）
+- spec.md §18.4.1 第 1 项累计列计算规则
+
+**业务台账基准校验**（spec.md §18.2.3）：
+- 录入 2026-09-06 完整台账后，行6 累计应 = E1=2000，行7 累计 = E2=1980，行8 累计 = E3=1680，行9 = E4=300
+- 该校验作为 R4 Evidence Gate 验收项（spec.md §18.10），非运行时强制断言
+
+### 3.5.5 导出流程
+
+> 对应 spec.md §18.5.2 报表生成与导出流程。
+
+```plantuml
+@startuml
+title Excel 导出流程
+
+start
+:接收导出请求(start_date, end_date);
+:report_service.Aggregate()\n聚合报表矩阵(同 §3.4.4);
+:excel_exporter.NewFile();
+:写入标题行 + 表头行;
+:写入 10 核心行(含行6/行9 自动计算);
+:写入参考区域(A/B/D);
+:应用颜色编码(绿/蓝/黄/灰);
+:设置列宽/行高/边框;
+:excel_exporter.WriteToBuffer();
+:记录审计日志(action=REPORT_EXPORT);
+:返回 .xlsx 二进制流;
+stop
+
+@enduml
+```
+
+**关键设计决策**：
+- **内存缓冲而非临时文件**：excel_exporter 写入 `bytes.Buffer` 后直接通过 HTTP 响应返回，避免磁盘 IO 与临时文件清理（spec.md §18.6 第 4 项导出失败场景：异常时 Buffer 释放，无残留）
+- **导出完整性**：导出 Excel 必须与前端预览完全一致（数据、颜色、行列顺序，spec.md §18.4.4 第 3 项导出完整性规则）——通过 report_service.Aggregate() 单一数据源保证，前端预览与 Excel 导出共用同一聚合结果
+
+## 3.6 前端页面设计
+
+> 对应 spec.md §18.5 交互流程 + §18.8 角色权限 + §18.9.3 第 1 项技术栈约束。继承 §2.9 Web Dashboard 技术栈与路由风格。
+
+### 3.6.1 路由与页面结构
+
+> 对应任务要求"新增 web/src/pages/reports/ 目录"。在 §2.9.2 路由结构基础上新增 `/reports/*` 路由组。
+
+```plantuml
+@startuml
+title R4 报表前端路由与组件结构
+
+package "路由 /reports/daily-output-plan" {
+  component [DailyOutputPlanPage\n(报表预览页)] as ReportPage
+  component [ReportMatrix\n(10行×N列矩阵)] as Matrix
+  component [ReferenceArea\n(标签补打参考区域)] as RefArea
+  component [ExportButton\n(导出 Excel)] as ExportBtn
+  component [DateRangePicker\n(日期范围选择)] as DatePick
+}
+
+package "路由 /reports/daily-plan/input" {
+  component [PlanInputPage\n(人工录入页)] as InputPage
+  component [PlanInputForm\n(日期+行号+数值表单)] as InputForm
+  component [PlanEntryTable\n(已录入条目列表)] as EntryTable
+}
+
+package "路由 /reports/holidays" {
+  component [HolidayConfigPage\n(节假日配置页)] as HolidayPage
+  component [HolidayForm\n(节假日增删改表单)] as HolidayForm
+  component [HolidayList\n(节假日列表)] as HolidayList
+}
+
+ReportPage --> DatePick
+ReportPage --> Matrix
+ReportPage --> RefArea
+ReportPage --> ExportBtn
+InputPage --> InputForm
+InputPage --> EntryTable
+HolidayPage --> HolidayForm
+HolidayPage --> HolidayList
+
+@enduml
+```
+
+**目录结构新增**：
+```
+web/src/pages/reports/
+  daily_output_plan_page.tsx   (报表预览页)
+  plan_input_page.tsx          (人工录入页)
+  holiday_config_page.tsx      (节假日配置页)
+  components/
+    report_matrix.tsx          (10行×N列矩阵组件)
+    reference_area.tsx         (参考区域组件)
+    plan_input_form.tsx        (录入表单)
+    holiday_form.tsx           (节假日表单)
+  hooks/
+    use_daily_output_plan.ts   (React Query: 报表聚合)
+    use_plan_entries.ts        (React Query: 日计划 CRUD)
+    use_holidays.ts            (React Query: 节假日 CRUD)
+    use_export_report.ts       (导出触发 hook)
+  types/
+    report.ts                  (TS 类型定义，禁止 any)
+```
+
+### 3.6.2 报表预览页面设计
+
+> 对应 spec.md §18.5.2 报表生成与导出流程 + §18.2 报表结构定义。
+
+**展示内容**：
+- **日期范围选择器**（DateRangePicker）：默认近 30 日，可调整（spec.md §18.2.1 第 1 项日期列规则）
+- **核心矩阵**（ReportMatrix）：10 行 × N 列 + 累计列
+  - 行顺序冻结（§18.2.2 第 1 项），行1 绿色背景、行6 蓝色背景、节假日列黄色背景（§3.5.3 颜色编码）
+  - 行6/行9 单元格只读，标注"自动计算"（spec.md §18.4.2 第 4 项禁止录入）
+  - 累计列最右，浅灰背景
+  - 每个单元格标注数据来源标签（MANUAL/AUTO_CALC/REFERENCE，spec.md §18.3 数据来源分离）
+- **参考区域**（ReferenceArea）：A/B/D 三行，独立区块，标题明确标注"数据来源：TBL_PRODUCTION_RECORD 自动采集（R2 裁决：禁止进入核心行）"
+- **导出按钮**（ExportButton）：触发 Excel 导出
+
+**数据获取**：React Query 调用 `GET /api/v1/reports/daily-output-plan`，配置 `refetchInterval` 近实时刷新（继承 §2.9.3 风格）。
+
+**权限控制**：
+- 生产管理员与生产监控员均可查看预览（spec.md §18.8.2 第 2 项）
+- 导出按钮对两角色均可见
+
+### 3.6.3 人工录入表单设计
+
+> 对应 spec.md §18.5.1 人工录入流程 + §18.4.2 录入规则。
+
+**展示内容**：
+- **录入表单**（PlanInputForm）：
+  - 日期选择（DatePicker，单日）
+  - 行号选择（Select，选项 1-10，但**排除**行6 与行9，spec.md §18.4.2 第 4 项禁止录入自动计算行）
+  - 数值输入（NumberInput，非负整数，可空）
+  - 产线选择（默认 HW102）
+  - 提交按钮（调用 `POST /api/v1/reports/daily-plan/entries`）
+- **已录入条目列表**（PlanEntryTable）：展示当前日期已录入的各行值，支持点击编辑（覆盖更新，spec.md §18.4.2 第 3 项录入覆盖规则）
+
+**交互流程**（spec.md §18.5.1）：
+1. 生产管理员登录 → 认证成功
+2. 选择日期 + 行号 + 数值 → 提交
+3. 前端校验行号非 6/9（双重保障，后端亦校验）
+4. 调用录入 API → 后端 UPSERT + 审计 + 重算行6/行9
+5. 返回更新后报表预览（React Query invalidate 触发重新聚合）
+
+**权限控制**：仅生产管理员可访问（spec.md §18.8.2 第 1 项录入权限规则）；生产监控员访问该路由时重定向至报表预览页并提示权限不足。
+
+### 3.6.4 节假日配置页面设计
+
+> 对应 spec.md §18.4.3 节假日配置规则 + §18.9.4 第 1 项可维护规则。
+
+**展示内容**：
+- **节假日表单**（HolidayForm）：日期 + 名称 + 是否休息，提交调用 `POST /api/v1/reports/holidays`
+- **节假日列表**（HolidayList）：已配置节假日，支持编辑/删除（调用 PUT/DELETE）
+
+**权限控制**：运维管理员或生产管理员可访问（spec.md §18.7.2 第 4 项配置人）。
+**可维护性**：节假日清单通过界面增删改查，**禁止**硬编码于源代码（spec.md §18.9.4 第 1 项节假日配置可维护规则）。
+
+### 3.6.5 导出按钮与下载
+
+> 对应 spec.md §18.4.4 导出规则。
+
+**实现**：
+- 导出按钮调用 `use_export_report` hook
+- hook 通过 `fetch` 请求 `GET /api/v1/reports/daily-output-plan/export?format=xlsx`，响应类型 `blob`
+- 浏览器原生下载（构造 `Blob` + `URL.createObjectURL` + 隐式 `<a download>` 点击），文件名由后端 `Content-Disposition` 指定
+- 导出期间按钮显示 loading 状态，失败时提示"导出失败，请重试"（spec.md §18.6 第 4 项导出失败场景，前端预览仍可用）
+
+**TypeScript 类型安全**：所有 API 响应类型定义于 `types/report.ts`，Strict 模式禁止 `any`（spec.md §18.9.3 第 1 项 + PREFERENCE_8）。
+
+## 3.7 数据分离架构
+
+> 对应 spec.md §18.3 数据来源分离策略。本节是 R4 核心架构决策，落实 R2/FROZEN 约束。
+
+### 3.7.1 数据来源分类
+
+> 对应 spec.md §18.3.1 数据来源分类。两类数据禁止混入同一数据行。
+
+| 数据类别 | 来源 | 包含字段 | 用途 | 存储表 |
+|---------|------|---------|------|--------|
+| 自动采集数据（标签补打类） | HWView 数据库 `TBL_PRODUCTION_RECORD`（经 Huawei102Adapter 采集） | A（记录数）/ B（唯一条码数）/ D（quantity 求和） | 独立参考区域或辅助参考列 | TBL_PRODUCTION_RECORD（EV1 存量） |
+| 人工录入数据（生产计划类） | Web 录入接口或外部系统（MES/ERP）导入 | 目标数量 / 实际完成（白班/夜班）/ 成品入库 / 出货 / 产线成品剩余 | 核心 10 行 | TBL_DAILY_PRODUCTION_PLAN（R4 新增） |
+
+### 3.7.2 核心行 vs 参考区域
+
+> 对应 spec.md §18.3.1 数据分离规则 + §18.3.2 自动填充范围。
+
+**核心 10 行数据来源约束**（spec.md §18.3.1 第 2 项核心行数据来源规则）：
+- 核心 10 行（§18.2.2 行1-行10）数据**必须**来自人工录入或外部系统导入
+- **禁止**从 `TBL_PRODUCTION_RECORD` 自动推导核心行（R2/FROZEN 约束）
+- 行6（合计）与行9（库存）由系统自动计算，**禁止**人工录入（spec.md §18.4.2 第 4 项）
+
+**参考区域数据来源约束**（spec.md §18.3.2 自动填充规则）：
+- 标签补打数据（A/B/D）**可**从 `TBL_PRODUCTION_RECORD` 自动填充至独立参考区域
+- **禁止**自动填充至核心数据行（spec.md §18.3.2 第 1 项）
+
+**report_service 编排逻辑**（数据分离的运行时保障）：
+```plantuml
+@startuml
+title report_service 数据分离编排
+
+start
+:接收报表请求(start_date, end_date);
+
+fork
+  :读取 TBL_DAILY_PRODUCTION_PLAN\n(核心行 1/2/3/4/5/7/8/10);
+  :计算行6 = 行2+3+4+5 (按日列);
+  :计算行9 = 累计入库 - 累计出货;
+  :计算各行累计列;
+fork again
+  :读取 TBL_PRODUCTION_RECORD 聚合\nA/B/D (复用 Statistics Engine);
+end fork
+
+:合并为核心矩阵 + 参考区域\n(物理隔离, 不混排);
+:读取 TBL_HOLIDAY_CALENDAR\n应用黄色标注;
+:标注数据来源(MANUAL/AUTO_CALC/REFERENCE);
+:返回报表矩阵;
+
+note right
+  禁止操作:
+  1. 核心行 ← SUM(TBL_PRODUCTION_RECORD.quantity)
+  2. 参考区域数据写入 TBL_DAILY_PRODUCTION_PLAN
+  3. SQL JOIN 两表推导核心行
+end note
+
+stop
+
+@enduml
+```
+
+**数据分离的物理保障**：
+- `TBL_DAILY_PRODUCTION_PLAN` 与 `TBL_PRODUCTION_RECORD` **无外键、无 JOIN**（§3.3.5 协调策略）
+- report_service 分别独立读取两表，在应用层内存中合并为报表矩阵，从架构上杜绝误推导
+- 标签补打参考接口（§3.4.6）独立暴露，不提供写入核心行能力
+
+### 3.7.3 数据来源标注
+
+> 对应 spec.md §18.3 数据来源分离策略的可见性要求。在报表中明确标注数据来源，便于审计与追溯。
+
+| 标注值 | 含义 | 应用位置 |
+|--------|------|---------|
+| MANUAL | 人工录入数据 | 核心行 1/2/3/4/5/7/8/10 各单元格 |
+| AUTO_CALC | 系统自动计算 | 核心行 6（合计）/ 行 9（库存）各单元格 |
+| REFERENCE | 自动采集参考数据 | 参考区域 A/B/D 各单元格 |
+
+**前端渲染**：每个单元格角标显示数据来源标签（如小字"人工"/"自动"/"参考"），导出 Excel 时在数据来源说明行（§3.5.2 行19）统一说明（spec.md §18.4.4 第 3 项导出完整性规则：前端预览与导出一致）。
+
+## 3.8 与现有架构集成
+
+> 对应任务要求"与现有架构的集成"。明确新增模块在 EV1 已冻结架构中的接入点。
+
+### 3.8.1 后端模块新增
+
+> 在 §2.1.2 hwview-server 组件架构基础上新增 report 模块。
+
+```plantuml
+@startuml
+title R4 后端模块集成（在 hwview-server 内新增）
+
+package "hwview-server (EV1 存量)" {
+  component [REST API Layer] as API
+  component [Statistics Engine] as StatsEng
+  component [Audit Log] as Audit
+  component [Auth Middleware] as Auth
+}
+
+package "R4 新增模块" #LightBlue {
+  component [ReportService\n(报表聚合+数据分离编排)] as ReportSvc
+  component [ExcelExporter\n(excelize 生成)] as ExcelExp
+  component [DailyProductionPlanRepo] as PlanRepo
+  component [HolidayRepo] as HolidayRepo
+}
+
+database "TBL_DAILY_PRODUCTION_PLAN" as PlanTbl
+database "TBL_HOLIDAY_CALENDAR" as HolidayTbl
+database "TBL_PRODUCTION_RECORD\n(EV1 存量)" as RecTbl
+database "TBL_AUDIT_LOG\n(EV1 存量)" as AuditTbl
+
+API --> Auth
+API --> ReportSvc
+ReportSvc --> PlanRepo
+ReportSvc --> HolidayRepo
+ReportSvc --> StatsEng : 复用聚合 A/B/D
+ReportSvc --> ExcelExp
+ReportSvc --> Audit
+PlanRepo --> PlanTbl
+HolidayRepo --> HolidayTbl
+StatsEng --> RecTbl
+Audit --> AuditTbl
+
+@enduml
+```
+
+**新增文件清单**：
+- `internal/server/report_service.go`：报表聚合 + 数据分离编排 + 自动计算
+- `internal/server/excel_exporter.go`：excelize 生成 .xlsx + 颜色编码
+- `internal/server/api/report_handler.go`：R4 REST API handler（注册到 §2.2.1 router）
+- `internal/store/daily_production_plan_repo.go`：日计划 CRUD 仓储
+- `internal/store/holiday_repo.go`：节假日 CRUD 仓储
+- `internal/store/migration/daily_production_plan.go`：GORM AutoMigrate 注册
+- `internal/store/migration/holiday_calendar.go`：GORM AutoMigrate 注册
+- `pkg/model/daily_production_plan.go`：领域对象
+- `pkg/model/holiday_calendar.go`：4领域对象
+
+**接入点**：
+- REST API handler 在 `internal/server/router.go` 注册 `/api/v1/reports/*` 路由组（继承 §2.2.1 版本前缀策略）
+- ReportService 复用 Statistics Engine（§2.6）聚合 A/B/D，不重复实现聚合 SQL
+- Auth Middleware（§2.2.2.1 前置条件）扩展"生产管理员"角色判定
+
+### 3.8.2 前端目录新增
+
+> 在 §2.9.2 Web Dashboard 路由结构基础上新增 `/reports/*` 路由组（§3.6.1 已详述目录结构）。
+
+**接入点**：
+- `web/src/routes/` 注册 `/reports/*` 路由
+- `web/src/pages/reports/` 新增页面组件
+- `web/src/hooks/` 新增 R4 React Query hooks
+- `web/src/types/report.ts` 新增 TS 类型定义
+- AuthProvider（§2.9.5）扩展"生产管理员"角色，路由守卫拦截越权录入
+
+### 3.8.3 GORM AutoMigrate 协调
+
+> 对应任务要求"使用 GORM AutoMigrate" + §3.3.5 与现有7张表协调。
+
+**迁移注册设计**：
+- 在 `internal/store/migration/migration.go` 的统一迁移函数中追加：
+  1. 现有 7 张表迁移（保持 EV1 顺序，design.md §2.3.2.2-2.3.2.8）
+  2. `AutoMigrate(&DailyProductionPlan{})`（R4 新增）
+  3. `AutoMigrate(&HolidayCalendar{})`（R4 新增）
+- 新增 2 张表无外键依赖，迁移顺序无约束，但置于存量表之后以保持迁移日志清晰
+- GORM AutoMigrate 自动创建表与索引，UNIQUE 约束通过 struct tag 声明（`gorm:"uniqueIndex:idx_name"`）
+
+### 3.8.4 角色与权限扩展
+
+> 对应 spec.md §18.8 角色与边界补充。在 §2.9.5 权限区分设计基础上扩展。
+
+|&nbsp;| 运维管理员 | 生产管理员（R4 新增） | 生产监控员 |
+|------|----------|-------------------|----------|
+| 产线/数据源配置 | ✓ | ✗ | ✗ |
+| 报表预览查看 | ✓ | ✓ | ✓ |
+| 报表数据录入 | ✗ | ✓ | ✗ |
+| 报表导出 | ✓ | ✓ | ✓ |
+| 节假日配置 | ✓ | ✓ | ✗ |
+
+**实现**：
+- AuthProvider 角色枚举新增 `PRODUCTION_ADMIN`
+- 录入接口（§3.4.2）前置条件校验 `role == PRODUCTION_ADMIN`（spec.md §18.8.2 第 1 项）
+- 导出/预览接口允许 `PRODUCTION_ADMIN` 与 `MONITOR`（spec.md §18.8.2 第 2 项）
+- 节假日配置允许 `OPS_ADMIN` 与 `PRODUCTION_ADMIN`（spec.md §18.7.2 第 4 项）
+- 前端路由守卫：`/reports/daily-plan/input` 仅 `PRODUCTION_ADMIN` 可访问，越权重定向至预览页
+
+## 3.9 R4 红线与裁决约束落实
+
+> 对应 spec.md §18.1.2 裁决约束继承 + §18.10 验收基准。本节明确设计中如何落实每项 R4 约束。
+
+| 约束编号 | 约束内容 | 设计中的落实措施 | 追溯章节 |
+|---------|---------|----------------|---------|
+| R2 继承 | 核心行禁止来自 TBL_PRODUCTION_RECORD.quantity 求和 | TBL_DAILY_PRODUCTION_PLAN 与 TBL_PRODUCTION_RECORD 物理隔离（无外键/无 JOIN）；report_service 分别读取两表，应用层编排；核心行仅从 TBL_DAILY_PRODUCTION_PLAN 读取 | 3.3.4 / 3.7.2 / 3.8.1 |
+| R3 继承 | 核心行必须人工录入或外部导入 | 提供 DailyProductionPlan CRUD 接口（§3.4.2）+ 前端录入表单（§3.6.3）；核心行数据来源标注 MANUAL | 3.4.2 / 3.6.3 / 3.7.3 |
+| Production Quantity FROZEN | 标签补打数据仅作参考区域 | ReportLabelReprintReference 非持久化对象，仅用于参考区域渲染；标签补打参考接口（§3.4.6）不提供写入核心行能力；数据来源标注 REFERENCE | 3.3.4 / 3.4.6 / 3.7.2 |
+| 命名合规 | 报表命名"102日产出计划"，禁含"生产数量" | 界面标题/文件名/API 路径均含"102日产出计划"；导出文件名 `102日产出计划报表_YYYYMMDD-YYYYMMDD.xlsx` | 3.1.2 / 3.4.5 |
+| 报表隔离 | 不与标签补打记录报表合并 | 核心矩阵与参考区域分属不同区块（§3.5.2 矩阵布局行14-17 独立参考区域） | 3.5.2 / 3.7.2 |
+| 行顺序冻结 | 10 行顺序禁止调整 | ReportRow.RowNo 1-10 固定映射 §18.2.2 行名称；excel_exporter 按固定顺序写入 | 3.5.2 / 3.4.4 |
+| 自动计算行禁录 | 行6/行9 禁止人工录入 | 录入接口校验 row_no ∉ {6,9}，返回 409；前端表单排除行6/行9 选项 | 3.4.2 / 3.6.3 |
+| 数据来源分离 | 两类数据禁止混排 | report_service 物理隔离编排；数据来源标注 MANUAL/AUTO_CALC/REFERENCE | 3.7.1 / 3.7.2 / 3.7.3 |
+| 导出完整性 | Excel 与前端预览一致 | 共用 report_service.Aggregate() 单一数据源；颜色编码统一由 §3.5.3 定义 | 3.5.5 / 3.6.2 |
+| 录入审计 | 录入/覆盖/导出记录审计 | 所有写入操作写 TBL_AUDIT_LOG（action=REPORT_INPUT/REPORT_EXPORT/HOLIDAY_CONFIG，含旧值/新值） | 3.4.2 / 3.4.5 / 3.4.3 |
+| 节假日可配置 | 禁止硬编码节假日 | TBL_HOLIDAY_CALENDAR 配置表 + CRUD 接口 + 前端配置页 | 3.3.3 / 3.4.3 / 3.6.4 |
+
+## 3.10 与 spec.md §18 的追溯矩阵
+
+> 对应 spec.md §18 各需求条款，确保设计覆盖所有 R4 需求。
+
+| spec.md §18 需求条款 | 需求内容 | design.md 对应设计章节 |
+|---------------------|---------|---------------------|
+| §18.1.1 核心职责 | 生成与导出 102 产线日产出计划跟踪报表 | 3.4 接口设计 + 3.5 Excel 导出 |
+| §18.1.2 裁决约束继承 | R2/R3/FROZEN 三项约束 | 3.1.1 裁决约束继承 + 3.9 红线落实 |
+| §18.1.3 命名规则 | 报表命名合规 + 报表隔离 | 3.1.2 命名合规约束 + 3.9 红线落实 |
+| §18.2.1 列结构 | 日期列 + 累计列 + 节假日黄色标注 | 3.5.2 矩阵结构 + 3.5.3 颜色编码 |
+| §18.2.2 行结构 | 10 行顺序 + 颜色编码 | 3.5.2 矩阵结构 + 3.5.3 颜色编码 + 3.4.4 ReportRow |
+| §18.2.3 业务台账基准 | 2026-09-06 E1/E2/E3/E4 校验 | 3.5.4 自动计算行（业务台账基准校验） |
+| §18.3.1 数据来源分类 | 自动采集 vs 人工录入分离 | 3.7.1 数据来源分类 |
+| §18.3.1 数据分离规则 | 标签补打禁止进入核心行 | 3.7.2 核心行 vs 参考区域 |
+| §18.3.2 自动填充范围 | 参考区域可自动填充，核心行禁止 | 3.7.2 + 3.4.6 标签补打参考接口 |
+| §18.4.1 累计计算规则 | 累计列/合计行/库存行自动计算 | 3.5.4 自动计算行与累计列 |
+| §18.4.2 人工录入规则 | 角色/粒度/覆盖/禁录自动行 | 3.4.2 CRUD 接口 + 3.6.3 录入表单 + 3.8.4 权限 |
+| §18.4.3 节假日配置规则 | 黄色标注 + 可配置 + 允许录入 | 3.3.3 TBL_HOLIDAY_CALENDAR + 3.4.3 CRUD + 3.6.4 配置页 |
+| §18.4.4 导出规则 | .xlsx 格式 + 命名 + 完整性 | 3.4.5 导出接口 + 3.5 Excel 导出实现 |
+| §18.5.1 人工录入流程 | 登录→校验→写入→重算→返回 | 3.6.3 录入表单交互流程 |
+| §18.5.2 报表生成导出流程 | 聚合→参考→计算→标注→导出 | 3.4.4 聚合接口 + 3.5.5 导出流程 + 3.7.2 编排 |
+| §18.6 异常场景 | 录入缺失/禁录行/冲突/导出失败/混排 | 3.4.2 异常映射 + 3.4.5 异常映射 + 3.6.5 导出失败 + 3.9 混排拒绝 |
+| §18.7.1 DailyProductionPlan | 日期/行号/数值/录入人/时间/禁录行 | 3.3.2 TBL_DAILY_PRODUCTION_PLAN DDL |
+| §18.7.2 HolidayCalendar | 日期/名称/是否休息/配置人/时间 | 3.3.3 TBL_HOLIDAY_CALENDAR DDL |
+| §18.7.3 ReportLabelReprintReference | A/B/D 来源 + 用途约束 | 3.3.4 领域对象类图 + 3.4.6 参考接口 |
+| §18.8.1 新增角色 | 生产管理员 | 3.8.4 角色与权限扩展 |
+| §18.8.2 角色权限约束 | 录入权限 + 导出权限 | 3.8.4 权限矩阵 + 3.4 各接口前置条件 |
+| §18.9.1 性能 | 预览 ≤3s + 导出 ≤5s | 3.4.4 性能约束 + 3.4.5 性能约束 |
+| §18.9.2 安全性 | 录入审计 + 导出审计 | 3.4.2/3.4.5 后置条件 + 3.9 红线落实 |
+| §18.9.3 兼容性 | 技术栈继承 + 表命名 TBL_ | 3.5.1 库选型 + 3.3.2/3.3.3 表命名 + 3.6 TypeScript Strict |
+| §18.9.4 可维护性 | 节假日可配置 + 行结构可配置 | 3.6.4 节假日配置页 + 3.5.2 行顺序冻结（默认 10 行） |
+| §18.10 验收基准 | R4 Evidence Gate | 3.9 红线落实 + 3.5.4 业务台账基准校验 |
+
+---
+
+> 文档结束。本 design.md 承接 spec.md 的"要做什么"，定义"怎么做"（架构/数据/接口/流程/部署）。§一、§二覆盖 EV1 主链（2.1-2.14），§三覆盖 EV1-R4 102日产出计划导出报表增量设计（3.1-3.10）。后续任务分解由 spec-task-agent 承担，代码实现由开发阶段承担。
