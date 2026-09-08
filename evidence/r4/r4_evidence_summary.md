@@ -81,10 +81,39 @@
 
 认证细节：`auth.enabled=true`，admin_key=`hwview-shadow-deploy`（服务器 /opt/hwview/config/config.yaml）；未认证访问 report API 返回 401。
 
-## 8. 待 PM 裁决
+## 8. Source Semantic 证据链（总设计师 Gate Review 专项）
 
-- **建议裁决：PASS（遗留项已全部收口）**
-- 非阻塞备忘：
-  1. 审计 actor 当前固定为 "admin"（单管理员模式），多用户/角色细分待 EV2。
-  2. 多日累计列包含混入的历史测试数据（09-07/09-08），生产切换前建议清库或仅录真实台账。
-  3. 前端登录密钥存 localStorage（单管理员场景可接受），EV2 若引入多用户需升级为会话/token 过期机制。
+详见 `source_semantic_evidence_chain.md`。5 个关键问题已回答：
+
+1. "17"来源：人工录入 TBL_DAILY_PRODUCTION_PLAN.carton_count（非源系统自动推导）
+2. carton_count 定义：R2-AMENDMENT 业务证据（17箱×30+9=519），人工录入
+3. loose_quantity=9 来源：人工录入（源系统无散件字段）
+4. 519 是否独立验证：**否**，计算值（Production Quantity FROZEN）
+5. 数据边界：标签补打（TBL_PRODUCTION_RECORD）与生产产量（TBL_DAILY_PRODUCTION_PLAN）4 层隔离
+
+**保留的 source semantic ambiguity**：源系统 quantity=17 与人工录入 carton_count=17 数值巧合，系统不自动建立映射；Adapter 层未硬编码 carton_count=quantity。
+
+## 9. R4 First Version Gate Review 提交
+
+| 项目 | 裁决 | 状态 |
+|------|------|------|
+| R2-AMENDMENT | 🟢 PASS | 已冻结 |
+| R4-BLOCKER-01 三维适用范围 | 🟢 PASS | 30/60 并存 |
+| R4-BLOCKER-02 行6公式 | 🟢 PASS | row6=row2+row3+row5 |
+| Design/Task 一致性 | 🟢 PASS | — |
+| Evidence-01 17×30+9=519 | 🟢 PASS | — |
+| Evidence-02 30/60按维度选择 | 🟢 PASS | — |
+| Evidence-03 row4=TARGET不参与 | 🟢 PASS | — |
+| Evidence-04 无全局硬编码 | 🟢 PASS | — |
+| Evidence-05 数据不污染 | 🟢 PASS | — |
+| Source Semantic 证据链 | 🟢 已提交 | 5 问已答 + 3 项保留歧义 |
+| 登录访问全链路 | 🟢 PASS | auth+nginx+前端路由守卫 |
+| E1-E4 台账基准 | 🟢 PASS | 单日 ALL PASS |
+
+**建议裁决：R4 First Version = PASS，授权 R4 全量生产化。**
+
+非阻塞备忘：
+1. 审计 actor 当前固定为 "admin"（单管理员模式），多用户/角色细分待 EV2。
+2. 多日累计列包含混入的历史测试数据（09-07/09-08），生产切换前建议清库或仅录真实台账。
+3. 前端登录密钥存 localStorage（单管理员场景可接受），EV2 若引入多用户需升级为会话/token 过期机制。
+4. Source semantic ambiguity：源系统 quantity=17 与 carton_count=17 数值巧合，生产中需业务人员确认映射关系。
