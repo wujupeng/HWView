@@ -27,9 +27,7 @@ func (r *DailyProductionPlanRepo) Upsert(ctx context.Context, plan *model.DailyP
 	if model.AutoCalcRows[plan.RowNo] {
 		return ErrAutoCalcRowForbidden
 	}
-	if plan.ActualQuantity != nil {
-		return ErrActualQuantityInput
-	}
+
 	if plan.LineCode == "" {
 		plan.LineCode = "HW102"
 	}
