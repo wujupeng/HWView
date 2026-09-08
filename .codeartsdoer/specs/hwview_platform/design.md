@@ -2,10 +2,12 @@
 
 > 文档定位：本文件描述 HWView 平台"怎么做"（架构、数据模型、接口、流程、部署等实现细节），承接 spec.md 的"要做什么"。
 > 阶段：第二阶段技术设计（Spec-Driven Development）
-> 上游规格：`.codeartsdoer/specs/hwview_platform/spec.md`（14 章，869 行）
-> 设计基线：EV1 设计基线（spec.md 第 9 章）+ EV1 任务清单（spec.md 第 10 章）+ EV1 红线（spec.md 第 13 章）
+> 上游规格：`.codeartsdoer/specs/hwview_platform/spec.md`（18 章，1406 行）
+> 设计基线：EV1 设计基线（spec.md 第 9 章）+ EV1 任务清单（spec.md 第 10 章）+ EV1 红线（spec.md 第 13 章）+ R2-AMENDMENT（spec.md §16.4）+ R4 报表（spec.md §18）
 > 技术栈：后端 Go + Gin；前端 React 18 + TypeScript(Strict) + Vite + React Query + Recharts；数据库表名 `TBL_` 前缀加下划线分隔大写格式
 > 命名规范：项目命名大写字母加连字符风格（HWView-EV1）；结构化命名带前缀和版本号层级命名（TASK-HWV-EV1-001）
+> **修订记录**：
+> - 2026-09-08 R2-AMENDMENT 设计同步更新：基于 spec.md §16.4 新业务证据（quantity=17 为整箱数 carton_count，actual_quantity = carton_count × units_per_carton + loose_quantity = 17 × 30 + 9 = 519），同步更新 §3.3 数据模型（新增 carton_count/units_per_carton/loose_quantity/actual_quantity 字段 + TBL_CARTON_SPECIFICATION 表）、§3.4 接口（新增装箱规格配置接口 + CRUD 扩展）、§3.5 Excel 导出（行2-行5 显示 actual_quantity）、§3.7 数据分离架构（数据来源标注扩展）、§3.9 R4 红线（新增禁硬编码/公式计算约束 + 合计公式修正）。追溯：spec.md §16.4 / §18.2.4 / §18.4.1 第 4/5 项 / §18.7.4 / §18.7.5 / §18.9.4 第 3 项 / §18.10。
 
 ---
 
@@ -1895,7 +1897,7 @@ echo "$(date) sudo deploy by debian" | sudo tee -a /var/log/hwview-sudo-audit.lo
 
 ### 3.3.1 设计目标
 
-> 对应 spec.md §18.7 数据约束 + §18.2 报表结构定义。
+> 对应 spec.md §18.7 数据约束 + §18.2 报表结构定义 + §16.4 R2-AMENDMENT 对 R4 数据模型的影响。
 
 **需支持的业务场景**：
 - 按"日期 × 行号"粒度的人工录入与覆盖更新（spec.md §18.4.2 第 2/3 项）
@@ -1903,43 +1905,64 @@ echo "$(date) sudo deploy by debian" | sudo tee -a /var/log/hwview-sudo-audit.lo
 - 节假日配置与黄色标注（spec.md §18.4.3）
 - 标签补打参考区域数据聚合（A/B/C/D，来源于 TBL_PRODUCTION_RECORD，spec.md §18.7.3）
 - 数据来源分离：核心行仅来自人工录入，参考区域来自自动采集（spec.md §18.3）
+- **R2-AMENDMENT 箱数/散件/实际件数换算**（spec.md §16.4 + §18.2.4 + §18.7.5）：行2-行5（实际完成数量）支持从"整箱数 + 散件数"换算为"实际产出件数"，公式 `actual_quantity = carton_count × units_per_carton + loose_quantity`（17 × 30 + 9 = 519）
+- **装箱规格配置化管理**（spec.md §18.7.4 + §18.9.4 第 3 项）：units_per_carton 必须通过 TBL_CARTON_SPECIFICATION 配置对象管理，禁止硬编码于源代码/配置文件常量/Adapter 内
+- **实际完成合计公式修正**（spec.md §18.4.1 第 4/5 项）：行6 = 行2 + 行3 + 行4 + 行5，禁止包含行1 目标数量行
 
 **性能、容量、扩展性目标**：
 - 报表预览响应 ≤3s（95 分位，30 日列 × 10 行聚合，spec.md §18.9.1 第 1 项）
 - Excel 导出 ≤5s（95 分位，30 日范围，spec.md §18.9.1 第 2 项）
+- 装箱规格配置查询 ≤100ms（单产线单产品配置查询，用于 actual_quantity 实时计算）
 
 **与存量数据的兼容策略**：
-- 新增 2 张表与现有 7 张表通过 GORM AutoMigrate 统一管理，不修改已有表 DDL。
+- 新增 3 张表（TBL_DAILY_PRODUCTION_PLAN / TBL_HOLIDAY_CALENDAR / TBL_CARTON_SPECIFICATION）与现有 7 张表通过 GORM AutoMigrate 统一管理，不修改已有表 DDL。
 - `TBL_DAILY_PRODUCTION_PLAN` 不与 `TBL_PRODUCTION_RECORD` 建立外键，物理隔离两类数据来源（落实 R2/FROZEN 约束）。
 - `TBL_HOLIDAY_CALENDAR` 独立配置，不依赖产线/数据源。
+- `TBL_CARTON_SPECIFICATION` 与 `TBL_PRODUCTION_LINE` 弱关联（line_code 字符串 + product_code），不建物理外键以保持与 R4 报表数据隔离；units_per_carton 由 report_service 在计算 actual_quantity 时动态读取，TBL_DAILY_PRODUCTION_PLAN 中保留 units_per_carton_snapshot 作为历史快照（避免后续配置变更影响已录入历史数据的可重现性）。
 
 ### 3.3.2 TBL_DAILY_PRODUCTION_PLAN DDL（日产出计划录入表）
 
-> 对应 spec.md §18.7.1 DailyProductionPlan 数据约束。存储人工录入的核心 10 行数据（行6/行9 不存储，由系统计算）。
+> 对应 spec.md §18.7.1 DailyProductionPlan 数据约束 + §18.7.5 CartonBasedActualQuantity（R2-AMENDMENT 新增）。存储人工录入的核心 10 行数据（行6/行9 不存储，由系统计算）。行2-行5（实际完成数量）支持两种录入模式：直接录入 value（传统模式）或录入 carton_count + loose_quantity 由系统计算 actual_quantity（R2-AMENDMENT 箱数换算模式）。
 
 ```sql
 CREATE TABLE TBL_DAILY_PRODUCTION_PLAN (
     id            BIGINT       PRIMARY KEY AUTOINCREMENT,
     plan_date     DATE         NOT NULL,
     row_no        INT          NOT NULL CHECK (row_no BETWEEN 1 AND 10),
-    value         INT,
+    value         INT,                                     -- 传统录入值（行1/7/8/10 使用，单位"只"）
+    -- R2-AMENDMENT 箱数换算字段（仅行2-行5 使用，spec.md §18.7.5）
+    carton_count  INT,                                     -- 整箱数（非负，来源于源系统 quantity 或人工录入）
+    units_per_carton_snapshot INT,                         -- 每箱标准装箱数快照（录入时从 TBL_CARTON_SPECIFICATION 读取并冻结，避免后续配置变更影响历史可重现性）
+    loose_quantity INT,                                    -- 散件数（非负，不足一箱的散件）
+    actual_quantity INT,                                   -- 实际产出件数（系统自动计算 = carton_count × units_per_carton_snapshot + loose_quantity，禁止人工录入）
     line_code     VARCHAR(64)  NOT NULL DEFAULT 'HW102',
     input_by      VARCHAR(128) NOT NULL,
     input_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (plan_date, row_no, line_code)
+    UNIQUE (plan_date, row_no, line_code),
+    -- R2-AMENDMENT 约束：actual_quantity 必须由公式计算（应用层强制，DDL 层用 CHECK 兜底）
+    CHECK (
+        actual_quantity IS NULL
+        OR actual_quantity = COALESCE(carton_count, 0) * COALESCE(units_per_carton_snapshot, 0) + COALESCE(loose_quantity, 0)
+    )
 );
 
 CREATE UNIQUE INDEX UQ_PLAN_DATE_ROW_LINE ON TBL_DAILY_PRODUCTION_PLAN(plan_date, row_no, line_code);
 CREATE INDEX IDX_PLAN_DATE      ON TBL_DAILY_PRODUCTION_PLAN(plan_date);
 CREATE INDEX IDX_PLAN_LINE_DATE ON TBL_DAILY_PRODUCTION_PLAN(line_code, plan_date);
 CREATE INDEX IDX_PLAN_ROW       ON TBL_DAILY_PRODUCTION_PLAN(row_no);
+CREATE INDEX IDX_PLAN_CARTON    ON TBL_DAILY_PRODUCTION_PLAN(plan_date, row_no, line_code)
+    WHERE carton_count IS NOT NULL;  -- 仅索引含箱数换算的记录，加速 actual_quantity 聚合
 ```
 
 **字段说明**：
 - `plan_date`：计划日期，格式 YYYY-MM-DD，与 row_no、line_code 共同构成唯一键（spec.md §18.7.1 第 1 项）
 - `row_no`：行号，取值 1-10，对应 §18.2.2 报表行结构（spec.md §18.7.1 第 2 项）
-- `value`：数值，可空（未录入时为 NULL，报表显示空），非负整数，单位"只"（spec.md §18.7.1 第 3 项）
+- `value`：传统录入值，可空，非负整数，单位"只"。行1（目标数量）/行7（成品入库）/行8（出货）/行10（产线成品剩余）使用此字段（spec.md §18.7.1 第 3 项）
+- `carton_count`：**R2-AMENDMENT 新增**。整箱数，可空，非负整数。仅行2-行5（实际完成数量，老线白班/老线夜班/新线白班/新线夜班）使用。来源于源系统 quantity 字段（R2-AMENDMENT 修正语义为 carton_count）或人工录入（spec.md §18.7.5 第 4 项）
+- `units_per_carton_snapshot`：**R2-AMENDMENT 新增**。每箱标准装箱数快照，可空，正整数。录入时从 `TBL_CARTON_SPECIFICATION` 读取当前生效配置并冻结到本记录，避免后续配置变更影响历史数据可重现性。**禁止**由人工直接录入此字段（必须由 report_service 从配置表读取后写入，spec.md §18.7.5 第 5 项 + §18.7.4 第 9 项配置化优先约束）
+- `loose_quantity`：**R2-AMENDMENT 新增**。散件数，可空，非负整数，不足一箱的散件数。仅行2-行5 使用（spec.md §18.7.5 第 6 项）
+- `actual_quantity`：**R2-AMENDMENT 新增**。实际产出件数，可空，非负整数。**系统自动计算** = `carton_count × units_per_carton_snapshot + loose_quantity`，**禁止**人工录入（spec.md §18.7.5 第 7/8 项）。CHECK 约束兜底确保公式一致性
 - `line_code`：产线编码，默认 'HW102'（102 产线），预留多产线扩展，不建外键以保持与 TBL_PRODUCTION_RECORD 物理隔离
 - `input_by`：录入人，生产管理员用户标识（spec.md §18.7.1 第 4 项）
 - `input_at` / `updated_at`：录入时间 / 最近更新时间戳（spec.md §18.7.1 第 5 项）
@@ -1947,7 +1970,17 @@ CREATE INDEX IDX_PLAN_ROW       ON TBL_DAILY_PRODUCTION_PLAN(row_no);
 **关键约束**：
 - `UNIQUE(plan_date, row_no, line_code)`：同一日期同一行同一产线仅一条记录，支持覆盖更新（spec.md §18.4.2 第 3 项录入覆盖规则）
 - **行号可录入性约束**：应用层强制禁止写入 row_no=6（合计行）与 row_no=9（库存行）的记录，该两行由系统自动计算（spec.md §18.7.1 第 6 项 + §18.4.2 第 4 项禁止项）。DDL 层不排除该两值（保留 row_no 1-10 完整性用于报表渲染），由 report_service 在写入前校验拒绝
-- **非负约束**：value 为非负整数，应用层校验（spec.md §18.7.1 第 3 项）
+- **非负约束**：value / carton_count / loose_quantity / actual_quantity 均为非负整数，应用层校验（spec.md §18.7.1 第 3 项 + §18.7.5 第 4/6 项）
+- **行号与字段使用对应约束**（R2-AMENDMENT，应用层强制）：
+  - row_no ∈ {1, 7, 8, 10}：使用 `value` 字段，carton_count/units_per_carton_snapshot/loose_quantity/actual_quantity 必须为 NULL
+  - row_no ∈ {2, 3, 4, 5}：使用 `carton_count` + `loose_quantity` + `actual_quantity` + `units_per_carton_snapshot` 字段，`value` 必须为 NULL；报表渲染时取 `actual_quantity` 作为该单元格显示值（spec.md §18.2.4 第 3 项实际完成数据来源修正规则）
+  - row_no ∈ {6, 9}：禁止录入（自动计算行）
+- **actual_quantity 公式计算约束**（R2-AMENDMENT，spec.md §18.7.5 第 8 项）：actual_quantity 必须等于 `carton_count × units_per_carton_snapshot + loose_quantity`，由 report_service 在写入时自动计算并填充，CHECK 约束兜底；尝试人工直接录入 actual_quantity 将被应用层拒绝（spec.md §18.7.5 第 7 项）
+- **units_per_carton_snapshot 来源约束**（R2-AMENDMENT，spec.md §18.7.5 第 5 项 + §18.7.4 第 9 项）：units_per_carton_snapshot 必须由 report_service 从 `TBL_CARTON_SPECIFICATION` 读取当前生效配置后写入，**禁止**由 API 请求体直接传入或硬编码常量
+
+**R2-AMENDMENT 验收基准**（spec.md §18.2.4）：
+- 录入 carton_count=17, units_per_carton=30（从 TBL_CARTON_SPECIFICATION 读取）, loose_quantity=9 → actual_quantity 自动计算为 519
+- 报表行2-行5 显示 actual_quantity=519，**禁止**显示 carton_count 原值 17（spec.md §18.2.4 第 3 项）
 
 ### 3.3.3 TBL_HOLIDAY_CALENDAR DDL（节假日日历表）
 
@@ -1979,19 +2012,72 @@ CREATE INDEX IDX_HOLIDAY_REST ON TBL_HOLIDAY_CALENDAR(is_rest);
 - `UNIQUE(holiday_date)`：同一日期仅一条节假日配置，避免冲突（spec.md §18.6 第 3 项节假日配置冲突场景：以最后生效配置为准，由 UPSERT 实现）
 - 节假日列**允许**录入数据（如加班生产），**禁止**强制置空（spec.md §18.4.3 第 2 项）——此为应用层渲染规则，不由 DDL 强制
 
-### 3.3.4 领域对象类图
+### 3.3.4 TBL_CARTON_SPECIFICATION DDL（装箱规格配置表，R2-AMENDMENT 新增）
 
-> 对应 spec.md §18.7 数据约束。展示 R4 新增领域对象及与 EV1 存量对象的引用关系（物理隔离，无外键）。
+> 对应 spec.md §18.7.4 CartonSpecification 数据约束 + §16.4.3 对 R4 数据模型的影响 + §18.9.4 第 3 项装箱规格配置化规则。每箱标准装箱数必须通过本配置对象管理，**禁止**硬编码于源代码/配置文件常量/Adapter 内。
+
+```sql
+CREATE TABLE TBL_CARTON_SPECIFICATION (
+    id               BIGINT       PRIMARY KEY AUTOINCREMENT,
+    line_code        VARCHAR(64)  NOT NULL,                  -- 关联产线（如 HW102），不建外键以保持与 R4 报表数据隔离
+    product_code     VARCHAR(64)  NOT NULL,                  -- 产品编码（如 HW102）
+    units_per_carton INT          NOT NULL CHECK (units_per_carton > 0),  -- 每箱标准装箱数，正整数，单位"件/箱"
+    effective_from   DATE         NOT NULL,                  -- 生效起始日期
+    effective_to     DATE,                                   -- 失效日期，NULL 表示长期生效
+    config_by        VARCHAR(128) NOT NULL,                  -- 配置人（运维管理员或生产管理员）
+    config_at        TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at       TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 唯一性约束：同一 line_code + product_code 在同一时间段内必须唯一生效，禁止时间重叠（spec.md §18.7.4 第 8 项）
+CREATE UNIQUE INDEX UQ_CARTON_SPEC_LINE_PROD_TIME ON TBL_CARTON_SPECIFICATION(line_code, product_code, effective_from);
+CREATE INDEX IDX_CARTON_SPEC_LINE_PROD  ON TBL_CARTON_SPECIFICATION(line_code, product_code);
+CREATE INDEX IDX_CARTON_SPEC_EFFECTIVE  ON TBL_CARTON_SPECIFICATION(effective_from, effective_to);
+```
+
+**字段说明**：
+- `line_code`：产线编码，关联 §6.1 Production Line，标识本装箱规格适用的产线（spec.md §18.7.4 第 1 项）。不建外键以保持与 R4 报表数据物理隔离
+- `product_code`：产品编码，标识本装箱规格适用的产品型号（spec.md §18.7.4 第 2 项）
+- `units_per_carton`：每箱标准装箱数，正整数，单位"件/箱"（spec.md §18.7.4 第 3 项）。**禁止**硬编码于源代码，**必须**通过本配置对象管理
+- `effective_from`：生效起始日期，格式 YYYY-MM-DD（spec.md §18.7.4 第 4 项）
+- `effective_to`：失效日期，可空，格式 YYYY-MM-DD，空值表示长期生效（spec.md §18.7.4 第 5 项）
+- `config_by`：配置人，运维管理员或生产管理员用户标识（spec.md §18.7.4 第 6 项）
+- `config_at` / `updated_at`：配置时间 / 最近更新时间戳（spec.md §18.7.4 第 7 项）
+
+**关键约束**：
+- **时间段唯一性约束**（spec.md §18.7.4 第 8 项）：同一 line_code + product_code 在同一时间段内必须唯一生效，禁止存在时间重叠的多条生效记录。由应用层在 UPSERT 时校验（查询现有生效记录的 effective_from/effective_to 是否与新记录重叠，重叠则返回 409 Conflict）
+- **配置化优先约束**（spec.md §18.7.4 第 9 项 + §18.9.4 第 3 项）：任何读取 units_per_carton 的代码路径必须经过本表查询，禁止使用常量、字面量或 Adapter 内硬编码。report_service 在计算 actual_quantity 时通过 `GetEffectiveCartonSpec(line_code, product_code, plan_date)` 查询本表
+- **生效日期查询逻辑**：给定 plan_date，查询条件为 `effective_from <= plan_date AND (effective_to IS NULL OR effective_to >= plan_date)`，返回唯一生效记录（由时间段唯一性约束保证）
+
+**R2-AMENDMENT 装箱数歧义待裁决**（spec.md §16.4.4 第 2 项 + §18.2.4 第 2 项）：
+- §18.2.3 品质部确认的"60 只/箱"与本表配置的"30 件/箱"（R2-AMENDMENT 证据）可能对应不同产品/场景
+- **必须**由 PM 进一步裁决当前产线 units_per_carton 取值并写入本配置表
+- 裁决前**禁止**硬编码任一数值；本表 units_per_carton 字段值由 PM 裁决后通过配置接口写入，不出现于源代码常量
+
+**配置示例**（PM 裁决后）：
+```sql
+-- 假设 PM 裁决 HW102 产线 2026-09-07 起 units_per_carton = 30
+INSERT INTO TBL_CARTON_SPECIFICATION (line_code, product_code, units_per_carton, effective_from, effective_to, config_by)
+VALUES ('HW102', 'HW102', 30, '2026-09-07', NULL, '<pm_user>');
+```
+
+### 3.3.5 领域对象类图
+
+> 对应 spec.md §18.7 数据约束 + §18.7.4 CartonSpecification + §18.7.5 CartonBasedActualQuantity（R2-AMENDMENT 新增）。展示 R4 新增领域对象及与 EV1 存量对象的引用关系（物理隔离，无外键）。
 
 ```plantuml
 @startuml
-title R4 报表领域对象类图
+title R4 报表领域对象类图（含 R2-AMENDMENT 箱数换算对象）
 
 class DailyProductionPlan {
   +ID : int64
   +PlanDate : date
   +RowNo : int
   +Value : *int
+  +CartonCount : *int
+  +UnitsPerCartonSnapshot : *int
+  +LooseQuantity : *int
+  +ActualQuantity : *int
   +LineCode : string
   +InputBy : string
   +InputAt : time
@@ -2006,6 +2092,28 @@ class HolidayCalendar {
   +ConfigBy : string
   +ConfigAt : time
   +UpdatedAt : time
+}
+
+class CartonSpecification <<R2-AMENDMENT 新增>> {
+  +ID : int64
+  +LineCode : string
+  +ProductCode : string
+  +UnitsPerCarton : int
+  +EffectiveFrom : date
+  +EffectiveTo : *date
+  +ConfigBy : string
+  +ConfigAt : time
+  +UpdatedAt : time
+}
+
+class CartonBasedActualQuantity <<R2-AMENDMENT 新增, 非持久化>> {
+  +Date : date
+  +LineID : int64
+  +Shift : string
+  +CartonCount : int
+  +UnitsPerCarton : int
+  +LooseQuantity : int
+  +ActualQuantity : int
 }
 
 class ReportLabelReprintReference {
@@ -2036,24 +2144,46 @@ note right of ReportLabelReprintReference
   禁止进入核心 10 行
 end note
 
+note right of CartonBasedActualQuantity
+  非持久化对象
+  由 report_service 从
+  TBL_DAILY_PRODUCTION_PLAN
+  (行2-行5) 构造
+  actual_quantity 自动计算
+  禁止人工录入
+end note
+
+note right of CartonSpecification
+  持久化对象
+  units_per_carton 唯一配置源
+  禁止硬编码于源代码
+  时间段唯一性约束
+end note
+
 DailyProductionPlan ..> ProductionRecord : 物理隔离\n(无外键, R2/FROZEN 约束)
+DailyProductionPlan ..> CartonSpecification : 读取 units_per_carton\n(录入时快照, R2-AMENDMENT)
+CartonBasedActualQuantity ..> DailyProductionPlan : 从行2-行5 构造\n(R2-AMENDMENT)
+CartonBasedActualQuantity ..> CartonSpecification : units_per_carton 来源\n(禁止硬编码)
 ReportLabelReprintReference ..> ProductionRecord : 聚合读取\n(A/B/C/D 参考区域)
 DailyProductionPlan ..> AuditLog : 录入/覆盖审计
 HolidayCalendar ..> AuditLog : 配置审计
+CartonSpecification ..> AuditLog : 配置审计
 
 @enduml
 ```
 
 **对象关系与生命周期**：
-- `DailyProductionPlan`：持久化对象，按"日期 × 行号 × 产线"唯一，支持覆盖更新；行6/行9 不持久化（由 report_service 实时计算）
+- `DailyProductionPlan`：持久化对象，按"日期 × 行号 × 产线"唯一，支持覆盖更新；行6/行9 不持久化（由 report_service 实时计算）；行2-行5 含 carton_count/units_per_carton_snapshot/loose_quantity/actual_quantity 字段（R2-AMENDMENT）
 - `HolidayCalendar`：持久化对象，按日期唯一，支持 UPSERT 覆盖
+- `CartonSpecification`：**R2-AMENDMENT 新增**持久化对象，按"line_code + product_code + effective_from"唯一，支持时间段唯一性约束；units_per_carton 的唯一配置源，禁止硬编码
+- `CartonBasedActualQuantity`：**R2-AMENDMENT 新增非持久化**对象，由 report_service 从 TBL_DAILY_PRODUCTION_PLAN 行2-行5 构造，actual_quantity 自动计算 = carton_count × units_per_carton + loose_quantity，禁止人工录入（spec.md §18.7.5 第 7/8 项）
 - `ReportLabelReprintReference`：**非持久化**对象，每次报表生成时由 Statistics Engine 从 `TBL_PRODUCTION_RECORD` 聚合构造（A=记录数、B=唯一条码数、D=SUM(quantity)），仅用于参考区域渲染，**禁止**写入核心行（spec.md §18.7.3 第 5 项数据用途约束）
 
 **持久化策略**：
 - `TBL_DAILY_PRODUCTION_PLAN` 与 `TBL_HOLIDAY_CALENDAR` 通过 GORM AutoMigrate 创建，与现有 7 张表共用同一 SQLite/PostgreSQL 实例
 - `DailyProductionPlan` 与 `ProductionRecord` **物理隔离**（无外键、无 JOIN 推导核心行），从数据模型层面落实 R2/FROZEN 约束，防止标签补打数据误入核心行
 
-### 3.3.5 与现有 7 张表的协调
+### 3.3.6 与现有 7 张表的协调
 
 > 对应任务要求"需与现有7张表协调，使用 GORM AutoMigrate"。明确新增表与存量表的边界与共存策略。
 
@@ -2062,12 +2192,14 @@ HolidayCalendar ..> AuditLog : 配置审计
 | TBL_DAILY_PRODUCTION_PLAN | 与 TBL_PRODUCTION_RECORD 物理隔离（无外键） | 共用 DB 实例与 AutoMigrate 入口；report_service 分别读取两表，在应用层编排数据分离，**禁止** SQL JOIN 将 quantity 求和写入核心行 |
 | TBL_DAILY_PRODUCTION_PLAN | 与 TBL_AUDIT_LOG 通过应用层关联（录入审计） | 录入/覆盖时由 report_service 写入 TBL_AUDIT_LOG（action=REPORT_INPUT，target_id=plan_date+row_no），不建物理外键 |
 | TBL_HOLIDAY_CALENDAR | 与所有存量表独立 | 纯配置表，无任何外键依赖；报表生成时由 report_service 读取并应用黄色标注 |
-| 两张新增表 | 与 TBL_PRODUCTION_LINE 弱关联（line_code 字符串） | TBL_DAILY_PRODUCTION_PLAN.line_code 默认 'HW102'，不建外键以保持物理隔离；未来多产线报表扩展时可选择关联 |
+| TBL_CARTON_SPECIFICATION | 与 TBL_PRODUCTION_LINE 弱关联（line_code 字符串） | **R2-AMENDMENT 新增**。纯配置表，不建物理外键以保持与 R4 报表数据隔离；report_service 在录入行2-行5 时通过 line_code + product_code + plan_date 查询当前生效的 units_per_carton，读取后作为快照写入 TBL_DAILY_PRODUCTION_PLAN.units_per_carton_snapshot |
+| TBL_CARTON_SPECIFICATION | 与 TBL_DAILY_PRODUCTION_PLAN 应用层关联 | 配置变更不影响已录入历史数据（历史记录的 units_per_carton_snapshot 已冻结）；新增/修改配置仅影响后续录入 |
+| 两张新增表（TBL_DAILY_PRODUCTION_PLAN / TBL_HOLIDAY_CALENDAR） | 与 TBL_PRODUCTION_LINE 弱关联（line_code 字符串） | TBL_DAILY_PRODUCTION_PLAN.line_code 默认 'HW102'，不建外键以保持物理隔离；未来多产线报表扩展时可选择关联 |
 
 **AutoMigrate 注册设计**：
 - 在 `internal/store/migration/migration.go` 的统一迁移函数中追加注册，与现有 7 张表共用同一入口，确保部署时一次性建表
-- 迁移顺序：先现有 7 张表（保持 EV1 依赖顺序），后新增 2 张表（无外键依赖，顺序无约束）
-- SQLite 与 PostgreSQL 兼容：DDL 采用标准类型（BIGINT/DATE/TIMESTAMP/BOOLEAN/VARCHAR），避免方言差异
+- 迁移顺序：先现有 7 张表（保持 EV1 依赖顺序），后新增 3 张表（TBL_CARTON_SPECIFICATION 优先于 TBL_DAILY_PRODUCTION_PLAN，因后者录入时需读取前者配置；TBL_HOLIDAY_CALENDAR 无依赖，顺序无约束）
+- SQLite 与 PostgreSQL 兼容：DDL 采用标准类型（BIGINT/DATE/TIMESTAMP/BOOLEAN/VARCHAR/INT），避免方言差异；CHECK 约束在两方言下均支持
 
 ## 3.4 接口设计
 
@@ -2075,14 +2207,15 @@ HolidayCalendar ..> AuditLog : 配置审计
 
 ### 3.4.1 总体设计
 
-> 对应 spec.md §18.4.2 人工录入 + §18.4.4 导出 + §18.3 数据来源分离。按调用方与业务域分类。
+> 对应 spec.md §18.4 业务规则 + §18.5 交互流程 + §18.8 角色权限 + §18.7.4 CartonSpecification 配置接口（R2-AMENDMENT）。接口风格继承 §2.2（RESTful + `/api/v1/` 版本前缀 + JSON + Go 强类型结构体）。
 
 | 接口分类 | 接口名称 | 调用方 | 稳定性等级 | spec.md 追溯 |
 |---------|---------|--------|-----------|-------------|
-| 日计划录入 | `POST/GET/PUT/DELETE /api/v1/reports/daily-plan/entries` | 生产管理员 | 稳定 | §18.4.2 录入规则 |
+| 日计划录入 | `POST/GET/PUT/DELETE /api/v1/reports/daily-plan/entries` | 生产管理员 | 稳定 | §18.4.2 录入规则 + §18.7.5 R2-AMENDMENT |
 | 日计划批量录入 | `POST /api/v1/reports/daily-plan/entries/batch` | 生产管理员 | 稳定 | §18.4.2 第 2 项录入粒度 |
 | 节假日配置 | `POST/GET/PUT/DELETE /api/v1/reports/holidays` | 运维管理员/生产管理员 | 稳定 | §18.4.3 节假日配置 |
-| 报表聚合 | `GET /api/v1/reports/daily-output-plan?start_date=&end_date=&line_code=` | 生产管理员/生产监控员 | 稳定 | §18.2 报表结构 + §18.5.2 |
+| 装箱规格配置（R2-AMENDMENT 新增） | `GET/POST/PUT/DELETE /api/v1/config/carton-spec` | 运维管理员/生产管理员 | 稳定 | §18.7.4 CartonSpecification + §18.9.4 第 3 项 |
+| 报表聚合 | `GET /api/v1/reports/daily-output-plan?start_date=&end_date=&line_code=` | 生产管理员/生产监控员 | 稳定 | §18.2 报表结构 + §18.5.2 + §18.2.4 R2-AMENDMENT |
 | Excel 导出 | `GET /api/v1/reports/daily-output-plan/export?start_date=&end_date=&format=xlsx` | 生产管理员/生产监控员 | 稳定 | §18.4.4 导出规则 |
 | 标签补打参考 | `GET /api/v1/reports/label-reprint-reference?start_date=&end_date=` | 生产管理员/生产监控员 | 稳定 | §18.3.2 + §18.7.3 |
 
@@ -2090,8 +2223,11 @@ HolidayCalendar ..> AuditLog : 配置审计
 - 全部接口含 `/api/v1/` 版本前缀，与 §2.2.1 变更策略一致
 - 导出接口返回二进制流（.xlsx），其余接口返回 JSON
 - 所有写入接口经 Auth Middleware 校验"生产管理员"角色（spec.md §18.8.2 第 1 项）；查询/导出接口允许生产监控员访问（spec.md §18.8.2 第 2 项）
+- 装箱规格配置接口（R2-AMENDMENT 新增）归入 `/api/v1/config/*` 路径组，与报表数据接口分离，强调其"配置"语义而非"业务数据"语义
 
 ### 3.4.2 DailyProductionPlan CRUD 接口
+
+> 对应 spec.md §18.4.2 录入规则 + §18.7.5 CartonBasedActualQuantity（R2-AMENDMENT）。支持两种录入模式：传统模式（行1/7/8/10 直接录入 value）与箱数换算模式（行2-行5 录入 carton_count + loose_quantity，系统自动计算 actual_quantity）。
 
 **接口签名**：
 ```go
@@ -2099,45 +2235,76 @@ HolidayCalendar ..> AuditLog : 配置审计
 type CreatePlanEntryRequest struct {
     PlanDate string `json:"plan_date" binding:"required"` // YYYY-MM-DD
     RowNo    int    `json:"row_no" binding:"required"`    // 1-10
-    Value    *int   `json:"value"`                        // 非负整数，可空
     LineCode string `json:"line_code"`                   // 默认 HW102
+
+    // 传统录入模式（行1/7/8/10 使用，spec.md §18.7.1 第 3 项）
+    Value    *int   `json:"value"`                        // 非负整数，可空
+
+    // R2-AMENDMENT 箱数换算模式（仅行2-行5 使用，spec.md §18.7.5）
+    CartonCount   *int `json:"carton_count"`              // 整箱数，非负
+    LooseQuantity *int `json:"loose_quantity"`            // 散件数，非负
+    // 注意：units_per_carton 由后端从 TBL_CARTON_SPECIFICATION 读取，禁止请求体传入
+    // 注意：actual_quantity 由后端自动计算，禁止请求体传入
 }
 
 // PUT /api/v1/reports/daily-plan/entries/{id}  (覆盖更新)
 type UpdatePlanEntryRequest struct {
-    Value *int `json:"value"`
+    Value          *int `json:"value"`                     // 传统模式
+    CartonCount    *int `json:"carton_count"`              // R2-AMENDMENT 箱数换算模式
+    LooseQuantity  *int `json:"loose_quantity"`            // R2-AMENDMENT
 }
 
 type PlanEntryResponse struct {
-    ID        int64  `json:"id"`
-    PlanDate  string `json:"plan_date"`
-    RowNo     int    `json:"row_no"`
-    Value     *int   `json:"value"`
-    LineCode  string `json:"line_code"`
-    InputBy   string `json:"input_by"`
-    InputAt   string `json:"input_at"`
-    UpdatedAt string `json:"updated_at"`
+    ID                    int64  `json:"id"`
+    PlanDate              string `json:"plan_date"`
+    RowNo                 int    `json:"row_no"`
+    Value                 *int   `json:"value"`                     // 传统模式值
+    CartonCount           *int   `json:"carton_count"`              // R2-AMENDMENT 整箱数
+    UnitsPerCartonSnapshot *int  `json:"units_per_carton_snapshot"` // R2-AMENDMENT 装箱规格快照（录入时从配置读取）
+    LooseQuantity         *int   `json:"loose_quantity"`            // R2-AMENDMENT 散件数
+    ActualQuantity        *int   `json:"actual_quantity"`           // R2-AMENDMENT 实际产出件数（系统自动计算）
+    LineCode              string `json:"line_code"`
+    InputBy               string `json:"input_by"`
+    InputAt               string `json:"input_at"`
+    UpdatedAt             string `json:"updated_at"`
+    Source                string `json:"source"`                   // MANUAL（人工录入）/ AUTO_CALC（actual_quantity 自动计算）
 }
 ```
 
-**业务说明**：按"日期 × 行号"粒度录入或覆盖核心数据行数据（spec.md §18.4.2 第 2 项录入粒度规则）。
-**前置条件**：调用者已认证且具备"生产管理员"角色（spec.md §18.8.2 第 1 项）。
+**业务说明**：按"日期 × 行号"粒度录入或覆盖核心数据行数据（spec.md §18.4.2 第 2 项录入粒度规则）。行2-行5 采用 R2-AMENDMENT 箱数换算模式，系统从 TBL_CARTON_SPECIFICATION 读取当前生效的 units_per_carton，自动计算 `actual_quantity = carton_count × units_per_carton + loose_quantity`（spec.md §18.7.5 第 7 项）。
+
+**前置条件**：
+- 调用者已认证且具备"生产管理员"角色（spec.md §18.8.2 第 1 项）
+- **R2-AMENDMENT 箱数换算模式额外前置**：row_no ∈ {2,3,4,5} 时，TBL_CARTON_SPECIFICATION 必须存在 (line_code, product_code, plan_date) 生效记录；若不存在返回 412 Precondition Failed（提示"未配置当前产线装箱规格，请先配置 units_per_carton"）
+
 **后置条件**：
 - `TBL_DAILY_PRODUCTION_PLAN` UPSERT（UNIQUE(plan_date, row_no, line_code) 兜底）
-- `TBL_AUDIT_LOG` 记录变更（action=REPORT_INPUT，change 含旧值/新值，spec.md §18.9.2 第 1 项录入审计规则）
+- **R2-AMENDMENT 箱数换算模式**：report_service 从 TBL_CARTON_SPECIFICATION 读取 units_per_carton 写入 units_per_carton_snapshot；自动计算 actual_quantity = carton_count × units_per_carton_snapshot + loose_quantity 写入 actual_quantity 字段（spec.md §18.7.5 第 7/8 项）
+- `TBL_AUDIT_LOG` 记录变更（action=REPORT_INPUT，change 含旧值/新值/carton_count/loose_quantity/actual_quantity，spec.md §18.9.2 第 1 项录入审计规则）
 - report_service 触发合计行（行6）与库存行（行9）重算（仅内存，不持久化该两行）
 
 **异常映射**：
-- `400 Bad Request`：row_no 不在 1-10；value 为负数；plan_date 格式非法
+- `400 Bad Request`：row_no 不在 1-10；value/carton_count/loose_quantity 为负数；plan_date 格式非法；行号与字段使用对应约束违反（如 row_no=2 但传入 value，或 row_no=7 但传入 carton_count）
 - `403 Forbidden`：调用者非生产管理员（生产监控员尝试录入，spec.md §18.8.2 第 1 项）
 - `409 Conflict`：行号为 6 或 9（自动计算行禁止录入，spec.md §18.4.2 第 4 项禁止项 + §18.6 第 2 项异常场景）
+- `412 Precondition Failed`：**R2-AMENDMENT** row_no ∈ {2,3,4,5} 但 TBL_CARTON_SPECIFICATION 无生效配置（spec.md §18.7.4 配置化优先约束）
+- `422 Unprocessable Entity`：**R2-AMENDMENT** 请求体含 units_per_carton 或 actual_quantity 字段（该两字段由系统填充，禁止人工传入，spec.md §18.7.5 第 7/8 项）
 
 **调用示例**：
 ```bash
+# 传统模式：录入行7 成品入库数量
 curl -X POST https://192.168.2.110/api/v1/reports/daily-plan/entries \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{"plan_date":"2026-09-06","row_no":7,"value":1980,"line_code":"HW102"}'
+
+# R2-AMENDMENT 箱数换算模式：录入行2 老线白班实际完成（carton_count=17, loose_quantity=9）
+# 系统从 TBL_CARTON_SPECIFICATION 读取 units_per_carton=30，自动计算 actual_quantity=17×30+9=519
+curl -X POST https://192.168.2.110/api/v1/reports/daily-plan/entries \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"plan_date":"2026-09-07","row_no":2,"carton_count":17,"loose_quantity":9,"line_code":"HW102"}'
+# 响应：actual_quantity=519, units_per_carton_snapshot=30, source="AUTO_CALC"
 ```
 
 ### 3.4.3 HolidayCalendar CRUD 接口
@@ -2166,9 +2333,87 @@ type HolidayResponse struct {
 **后置条件**：`TBL_HOLIDAY_CALENDAR` UPSERT（UNIQUE(holiday_date) 兜底，spec.md §18.6 第 3 项冲突场景以最后生效为准）；`TBL_AUDIT_LOG` 记录（action=HOLIDAY_CONFIG）。
 **异常映射**：`400`（日期格式非法/名称为空）/ `403`（权限不足）。
 
-### 3.4.4 报表数据聚合接口
+### 3.4.4 装箱规格配置接口（R2-AMENDMENT 新增）
 
-> 对应 spec.md §18.5.2 报表生成与导出流程前半段。聚合人工录入数据 + 标签补打参考数据 + 自动计算行 + 节假日标注，返回完整报表矩阵供前端预览。
+> 对应 spec.md §18.7.4 CartonSpecification 数据约束 + §18.9.4 第 3 项装箱规格配置化规则 + §16.4.4 第 1 项 units_per_carton 配置化约束。每箱标准装箱数的唯一配置入口，**禁止**硬编码于源代码/配置文件常量/Adapter 内。
+
+**接口签名**：
+```go
+// POST /api/v1/config/carton-spec  (新增配置)
+type CreateCartonSpecRequest struct {
+    LineCode        string `json:"line_code" binding:"required"`         // 如 HW102
+    ProductCode     string `json:"product_code" binding:"required"`      // 如 HW102
+    UnitsPerCarton  int    `json:"units_per_carton" binding:"required,min=1"` // 每箱标准装箱数，正整数
+    EffectiveFrom   string `json:"effective_from" binding:"required"`    // YYYY-MM-DD
+    EffectiveTo     *string `json:"effective_to"`                        // YYYY-MM-DD，可空表示长期生效
+}
+
+// PUT /api/v1/config/carton-spec/{id}  (修改配置)
+type UpdateCartonSpecRequest struct {
+    UnitsPerCarton *int    `json:"units_per_carton"`                    // 修改装箱数
+    EffectiveTo    *string `json:"effective_to"`                        // 修改失效日期
+}
+
+// GET /api/v1/config/carton-spec?line_code=&product_code=&effective_date=  (查询生效配置)
+type CartonSpecQuery struct {
+    LineCode       string `form:"line_code" binding:"required"`
+    ProductCode    string `form:"product_code" binding:"required"`
+    EffectiveDate  string `form:"effective_date" binding:"required"`    // 查询该日期生效的配置
+}
+
+type CartonSpecResponse struct {
+    ID              int64  `json:"id"`
+    LineCode        string `json:"line_code"`
+    ProductCode     string `json:"product_code"`
+    UnitsPerCarton  int    `json:"units_per_carton"`
+    EffectiveFrom   string `json:"effective_from"`
+    EffectiveTo     *string `json:"effective_to"`
+    ConfigBy        string `json:"config_by"`
+    ConfigAt        string `json:"config_at"`
+    UpdatedAt       string `json:"updated_at"`
+}
+```
+
+**业务说明**：
+- `POST`：新增装箱规格配置，校验时间段唯一性（同 line_code + product_code 在 effective_from 起不得与现有生效记录重叠，spec.md §18.7.4 第 8 项）
+- `GET`：查询指定 (line_code, product_code, effective_date) 生效的配置，查询条件 `effective_from <= effective_date AND (effective_to IS NULL OR effective_to >= effective_date)`，返回唯一生效记录（由时间段唯一性约束保证）
+- `PUT`：修改配置（如调整失效日期），校验修改后不违反时间段唯一性
+- `DELETE`：删除配置（仅允许删除未关联任何 TBL_DAILY_PRODUCTION_PLAN 记录的配置，避免历史数据失去可重现性）
+
+**前置条件**：调用者已认证且具备运维管理员或生产管理员角色（spec.md §18.7.4 第 6 项配置人）。
+
+**后置条件**：
+- `TBL_CARTON_SPECIFICATION` UPSERT/UPDATE/DELETE
+- `TBL_AUDIT_LOG` 记录（action=CARTON_SPEC_CONFIG，change 含旧值/新值/units_per_carton，spec.md §18.9.2 第 1 项录入审计规则）
+- **不影响已录入历史数据**：TBL_DAILY_PRODUCTION_PLAN 中已存在的 units_per_carton_snapshot 不变（历史快照已冻结，spec.md §3.3.6 协调策略）
+
+**异常映射**：
+- `400 Bad Request`：units_per_carton < 1；日期格式非法；effective_to < effective_from
+- `403 Forbidden`：权限不足（非运维管理员/生产管理员）
+- `409 Conflict`：时间段唯一性冲突（同 line_code + product_code 在 effective_from 起存在时间重叠的生效记录，spec.md §18.7.4 第 8 项验收条件）
+- `412 Precondition Failed`：DELETE 时存在关联的 TBL_DAILY_PRODUCTION_PLAN 记录（避免历史数据失去可重现性）
+
+**R2-AMENDMENT 装箱数歧义待裁决约束**（spec.md §16.4.4 第 2 项 + §18.2.4 第 2 项）：
+- PM 裁决前，本接口允许配置 units_per_carton=30 或 60（由 PM 通过本接口写入裁决值）
+- 裁决前**禁止**在源代码中出现 `units_per_carton = 30` 或 `UNITS_PER_CARTON = 60` 等硬编码常量（spec.md §18.7.4 第 9 项配置化优先约束 + §18.9.4 第 3 项）
+
+**调用示例**：
+```bash
+# PM 裁决后配置 HW102 产线 units_per_carton=30，生效日期 2026-09-07
+curl -X POST https://192.168.2.110/api/v1/config/carton-spec \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"line_code":"HW102","product_code":"HW102","units_per_carton":30,"effective_from":"2026-09-07"}'
+
+# 查询 2026-09-07 生效的配置
+curl -X GET "https://192.168.2.110/api/v1/config/carton-spec?line_code=HW102&product_code=HW102&effective_date=2026-09-07" \
+  -H "Authorization: Bearer <token>"
+# 响应：units_per_carton=30
+```
+
+### 3.4.5 报表数据聚合接口
+
+> 对应 spec.md §18.5.2 报表生成与导出流程前半段 + §18.2.4 R2-AMENDMENT 实际完成数据来源修正规则。聚合人工录入数据 + 标签补打参考数据 + 自动计算行 + 节假日标注，返回完整报表矩阵供前端预览。**R2-AMENDMENT**：行2-行5 的 Values 取自 actual_quantity（经箱数换算后的实际件数），**禁止**直接使用 carton_count 原值。
 
 **接口签名**：
 ```go
@@ -2190,7 +2435,20 @@ type ReportRow struct {
     Values   []*int  `json:"values"`     // 各日期列值（nil=未录入）
     Total    int     `json:"total"`      // 累计列：该行所有日期值之和
     IsAuto   bool    `json:"is_auto"`    // 是否自动计算行（行6/行9）
-    Source   string  `json:"source"`     // 数据来源标注：MANUAL / AUTO_CALC / REFERENCE
+    Source   string  `json:"source"`     // 数据来源标注：MANUAL / AUTO_CALC / REFERENCE / CARTON_CALC（R2-AMENDMENT）
+
+    // R2-AMENDMENT 辅助明细（仅行2-行5 含箱数换算数据时填充，用于前端展示箱数/散件明细，spec.md §18.2.4）
+    CartonDetails []CartonDetail `json:"carton_details,omitempty"` // 各日期列的箱数/散件明细
+}
+
+// R2-AMENDMENT 箱数换算明细（行2-行5 辅助列，spec.md §18.7.5）
+type CartonDetail struct {
+    Date              string `json:"date"`
+    CartonCount       *int   `json:"carton_count"`        // 整箱数
+    UnitsPerCarton    *int   `json:"units_per_carton"`    // 每箱标准装箱数（快照）
+    LooseQuantity     *int   `json:"loose_quantity"`      // 散件数
+    ActualQuantity    *int   `json:"actual_quantity"`     // 实际产出件数（= carton_count × units_per_carton + loose_quantity）
+    HasCartonData     bool   `json:"has_carton_data"`     // 是否含箱数换算数据（false 表示该单元格为传统录入或未录入）
 }
 
 type ReportReferenceArea struct {
@@ -2208,19 +2466,23 @@ type ReportReferenceRow struct {
 
 **业务说明**：
 - 读取 `TBL_DAILY_PRODUCTION_PLAN`（核心行 1/2/3/4/5/7/8/10 人工录入值）
+- **R2-AMENDMENT 行2-行5 数据来源**（spec.md §18.2.4 第 3 项实际完成数据来源修正规则）：
+  - 行2-行5 的 `Values[d]` 取自 `actual_quantity`（经箱数换算后的实际件数），**禁止**直接使用 `carton_count` 原值（如 carton_count=17 不应显示为 17，应显示 actual_quantity=519）
+  - 行2-行5 的 `CartonDetails[d]` 填充箱数/散件明细，供前端展示辅助列（carton_count/units_per_carton/loose_quantity/actual_quantity）
+  - 行2-行5 的 `Source` 标注为 `CARTON_CALC`（箱数换算模式）
 - 读取 `TBL_PRODUCTION_RECORD` 聚合 A/B/D（参考区域，复用 §2.6.1 Statistics Engine SQL）
-- **自动计算行6**：行6[d] = 行2[d] + 行3[d] + 行4[d] + 行5[d]，按日列分别求和（spec.md §18.4.1 第 2 项）
+- **自动计算行6**（R2-AMENDMENT 公式修正，spec.md §18.4.1 第 4 项）：行6[d] = 行2[d] + 行3[d] + 行4[d] + 行5[d]，按日列分别求和；**禁止**包含行1 目标数量（spec.md §18.4.1 第 5 项实际完成合计与目标分离约束）
 - **自动计算行9**：行9[d] = 累计入库(行7 截至 d) - 累计出货(行8 截至 d)，按日列累计差（spec.md §18.4.1 第 3 项）
 - **累计列**：每行 Total = SUM(该行所有日期 Values)（spec.md §18.4.1 第 1 项）
 - 读取 `TBL_HOLIDAY_CALENDAR` 应用黄色标注（is_rest=true 的日期列）
-- **数据来源标注**：核心行 Source=MANUAL（行6/行9 为 AUTO_CALC），参考区域 Source=REFERENCE，前端据此渲染数据来源标签（spec.md §18.3 数据来源分离）
+- **数据来源标注**：核心行 Source=MANUAL（行1/7/8/10 传统录入）/ CARTON_CALC（行2-行5 箱数换算，actual_quantity 自动计算）/ AUTO_CALC（行6/行9 系统自动计算），参考区域 Source=REFERENCE，前端据此渲染数据来源标签（spec.md §18.3 数据来源分离 + §18.2.4 R2-AMENDMENT）
 
 **前置条件**：调用者已认证（生产管理员或生产监控员均可，spec.md §18.8.2 第 2 项）。
 **后置条件**：无（只读聚合查询）。
 **异常映射**：`400`（日期格式非法/起止顺序倒置）/ `504`（查询超时，返回部分数据）。
 **性能约束**：响应 ≤3s（95 分位，30 日列 × 10 行聚合，spec.md §18.9.1 第 1 项）。
 
-### 3.4.5 Excel 导出接口
+### 3.4.6 Excel 导出接口
 
 > 对应 spec.md §18.4.4 导出规则 + §18.5.2 流程后半段。生成 .xlsx 二进制流，保留颜色编码。
 
@@ -2244,7 +2506,7 @@ type ExportReportQuery struct {
 **性能约束**：导出 ≤5s（95 分位，30 日范围，spec.md §18.9.1 第 2 项）。
 **命名约束**：文件名必须形如 `102日产出计划报表_YYYYMMDD-YYYYMMDD.xlsx`，禁止含"生产数量"字样（spec.md §18.4.4 第 2 项导出命名规则）。
 
-### 3.4.6 标签补打参考数据接口
+### 3.4.7 标签补打参考数据接口
 
 > 对应 spec.md §18.3.2 自动填充范围 + §18.7.3 ReportLabelReprintReference。独立暴露参考区域数据，供前端独立渲染与数据来源审计。
 
@@ -2291,18 +2553,25 @@ type LabelReprintReferenceRow struct {
 
 ### 3.5.2 报表矩阵结构
 
-> 对应 spec.md §18.2 报表结构定义。10 行 × N 列 + 累计列。
+> 对应 spec.md §18.2 报表结构定义 + §18.2.4 R2-AMENDMENT 箱数/散件/实际件数验收基准。10 行 × N 列 + 累计列 + R2-AMENDMENT 辅助列（行2-行5 显示箱数/散件明细）。
 
 **矩阵布局**（以 9/5-9/30 共 26 日为例）：
 
 | 区域 | 行/列范围 | 内容 |
 |------|----------|------|
 | 标题行 | 行1 | "102日产出计划报表（2026-09-05 至 2026-09-30）" 合并单元格 |
-| 表头行 | 行2 | 列1="行名称" / 列2..列27=日期(9/5..9/30) / 列28="累计数量" |
-| 核心数据行 | 行3-行12 | 10 个核心行（§18.2.2 顺序），各日期列值 + 累计列 |
+| 表头行 | 行2 | 列1="行名称" / 列2..列27=日期(9/5..9/30) / 列28="累计数量" / 列29-列32="箱数/装箱规格/散件/实际件数"（R2-AMENDMENT 辅助列，仅行2-行5 填充） |
+| 核心数据行 | 行3-行12 | 10 个核心行（§18.2.2 顺序），各日期列值 + 累计列 + R2-AMENDMENT 辅助列（行2-行5） |
 | 参考区域标题 | 行14 | "标签补打参考区域（数据来源：TBL_PRODUCTION_RECORD 自动采集）" |
 | 参考数据行 | 行15-行17 | A/B/D 三行参考数据 + 累计列 |
-| 数据来源说明 | 行19 | "核心数据行来源：人工录入/MES导入；参考区域来源：自动采集（R2 裁决：禁止进入核心行）" |
+| 数据来源说明 | 行19 | "核心数据行来源：人工录入/MES导入；参考区域来源：自动采集（R2 裁决：禁止进入核心行）；行2-行5 实际完成数量来源>来源：actual_quantity = carton_count × units_per_carton + loose_quantity（R2-AMENDMENT）" |
+
+**R2-AMENDMENT 辅助列设计**（spec.md §18.2.4 + §18.7.5）：
+- 辅助列位于累计列右侧，共 4 列：箱数（carton_count）/ 装箱规格（units_per_carton_snapshot）/ 散件（loose_quantity）/ 实际件数（actual_quantity）
+- 仅行2-行5（实际完成数量，老线白班/老线夜班/新线白班/新线夜班）填充辅助列；其他行辅助列为空
+- **主显示列（日期列 + 累计列）取 actual_quantity**，**禁止**显示 carton_count 原值（spec.md §18.2.4 第 3 项实际完成数据来源修正规则）
+- 辅助列用于审计与可追溯性，便于人工核对箱数换算过程（如 17 × 30 + 9 = 519）
+- 辅助列样式：浅灰背景（区别于主数据列），字体加粗显示 actual_quantity（强调其为计算结果）
 
 **行顺序冻结**（spec.md §18.2.2 第 1 项行顺序规则，禁止调整）：
 1. 目标数量老线 → 2. 实际完成（老线白班）→ 3. 实际完成（老线夜班）→ 4. 实际完成（新线白班）→ 5. 实际完成（新线夜班）→ 6. 合计 → 7. 成品入库 → 8. 出货 → 9. 成品库存 → 10. 产线成品剩余
@@ -2326,12 +2595,18 @@ type LabelReprintReferenceRow struct {
 
 ### 3.5.4 自动计算行与累计列
 
-> 对应 spec.md §18.4.1 累计计算规则。在 excel_exporter 中实现，**禁止**依赖 Excel 公式（确保导出文件打开即显示计算值，兼容只读查看器）。
+> 对应 spec.md §18.4.1 累计计算规则 + §18.4.1 第 4/5 项 R2-AMENDMENT 实际完成合计公式修正。在 excel_exporter 中实现，**禁止**依赖 Excel 公式（确保导出文件打开即显示计算值，兼容只读查看器）。
 
-**行6（合计）计算**：
+**行6（合计）计算**（R2-AMENDMENT 公式修正，spec.md §18.4.1 第 4 项）：
 - 对每个日期列 d：`行6[d] = 行2[d] + 行3[d] + 行4[d] + 行5[d]`（nil 视为 0）
+- **禁止**将行1"目标数量老线"或任何目标数量行加入实际完成合计（spec.md §18.4.1 第 4 项实际完成合计公式约束）
+- **目标与实际分离**：行1（目标数量）与行6（实际完成合计）分属不同行，**禁止**合并或相加（spec.md §18.4.1 第 5 项实际完成合计与目标分离约束）
 - 累计列：`行6.Total = SUM(行6 所有日期列)`
 - spec.md §18.4.1 第 2 项合计行计算规则
+
+**R2-AMENDMENT 行6 计算示例**（spec.md §18.4.1 第 4 项验收条件）：
+- 行1 目标=2000，行2/3/4/5 实际=500/500/500/500 → 行6 合计=2000（实际完成之和），**而非 4000**（含目标）
+- 行2-行5 的值取自 actual_quantity（经箱数换算后的实际件数），**禁止**取 carton_count 原值
 
 **行9（成品库存）计算**：
 - 对每个日期列 d：`行9[d] = SUM(行7[起始..d]) - SUM(行8[起始..d])`（累计入库 - 累计出货，截至当日）
@@ -2341,27 +2616,42 @@ type LabelReprintReferenceRow struct {
 **累计列计算**（所有行）：
 - `行X.Total = SUM(行X 所有日期列 Values)`（nil 视为 0）
 - spec.md §18.4.1 第 1 项累计列计算规则
+- **R2-AMENDMENT**：行2-行5 的 Values 取自 actual_quantity，故累计列亦为 actual_quantity 之和
 
 **业务台账基准校验**（spec.md §18.2.3）：
 - 录入 2026-09-06 完整台账后，行6 累计应 = E1=2000，行7 累计 = E2=1980，行8 累计 = E3=1680，行9 = E4=300
 - 该校验作为 R4 Evidence Gate 验收项（spec.md §18.10），非运行时强制断言
 
+**R2-AMENDMENT 箱数换算基准校验**（spec.md §18.2.4）：
+- 录入 carton_count=17, units_per_carton=30（从 TBL_CARTON_SPECIFICATION 读取）, loose_quantity=9 → actual_quantity 自动计算为 519
+- 报表行2-行5 主显示列显示 actual_quantity=519，辅助列显示 17/30/9/519
+- 该校验作为 R4 Evidence Gate 验收项（spec.md §18.10 "R2-AMENDMENT 实际件数计算"），非运行时强制断言
+
 ### 3.5.5 导出流程
 
-> 对应 spec.md §18.5.2 报表生成与导出流程。
+> 对应 spec.md §18.5.2 报表生成与导出流程 + §18.2.4 R2-AMENDMENT 实际完成数据来源修正规则。
 
 ```plantuml
 @startuml
-title Excel 导出流程
+title Excel 导出流程（含 R2-AMENDMENT 辅助列）
 
 start
 :接收导出请求(start_date, end_date);
-:report_service.Aggregate()\n聚合报表矩阵(同 §3.4.4);
+:report_service.Aggregate()\n聚合报表矩阵(同 §3.4.5);
 :excel_exporter.NewFile();
-:写入标题行 + 表头行;
-:写入 10 核心行(含行6/行9 自动计算);
+:写入标题行 + 表头行\n(含 R2-AMENDMENT 辅助列表头);
+:写入 10 核心行;
+note right
+  行2-行5: 主显示列取 actual_quantity
+           辅助列写 carton_count/units_per_carton/
+           loose_quantity/actual_quantity
+  行6: = 行2+行3+行4+行5 (R2-AMENDMENT 公式修正)
+  行9: = 累计入库 - 累计出货
+  禁止: 行2-行5 显示 carton_count 原值
+  禁止: 行6 包含行1 目标数量
+end note
 :写入参考区域(A/B/D);
-:应用颜色编码(绿/蓝/黄/灰);
+:应用颜色编码(绿/蓝/黄/灰 + 辅助列浅灰);
 :设置列宽/行高/边框;
 :excel_exporter.WriteToBuffer();
 :记录审计日志(action=REPORT_EXPORT);
@@ -2374,6 +2664,8 @@ stop
 **关键设计决策**：
 - **内存缓冲而非临时文件**：excel_exporter 写入 `bytes.Buffer` 后直接通过 HTTP 响应返回，避免磁盘 IO 与临时文件清理（spec.md §18.6 第 4 项导出失败场景：异常时 Buffer 释放，无残留）
 - **导出完整性**：导出 Excel 必须与前端预览完全一致（数据、颜色、行列顺序，spec.md §18.4.4 第 3 项导出完整性规则）——通过 report_service.Aggregate() 单一数据源保证，前端预览与 Excel 导出共用同一聚合结果
+- **R2-AMENDMENT 辅助列写入**：行2-行5 的辅助列（carton_count/units_per_carton_snapshot/loose_quantity/actual_quantity）必须写入 Excel，便于审计与可追溯性；主显示列（日期列 + 累计列）取 actual_quantity，**禁止**显示 carton_count 原值（spec.md §18.2.4 第 3 项）
+- **R2-AMENDMENT 行6 公式修正**：行6 = 行2 + 行3 + 行4 + 行5，**禁止**包含行1 目标数量（spec.md §18.4.1 第 4/5 项）
 
 ## 3.6 前端页面设计
 
@@ -2510,12 +2802,22 @@ web/src/pages/reports/
 
 ### 3.7.1 数据来源分类
 
-> 对应 spec.md §18.3.1 数据来源分类。两类数据禁止混入同一数据行。
+> 对应 spec.md §18.3.1 数据来源分类 + §16.4.3 R2-AMENDMENT 对 R4 数据模型的影响。两类数据禁止混入同一数据行。R2-AMENDMENT 进一步细化行2-行5 的数据来源：carton_count/loose_quantity 来自人工录入，units_per_carton 来自配置，actual_quantity 来自 AUTO_CALC。
 
 | 数据类别 | 来源 | 包含字段 | 用途 | 存储表 |
 |---------|------|---------|------|--------|
 | 自动采集数据（标签补打类） | HWView 数据库 `TBL_PRODUCTION_RECORD`（经 Huawei102Adapter 采集） | A（记录数）/ B（唯一条码数）/ D（quantity 求和） | 独立参考区域或辅助参考列 | TBL_PRODUCTION_RECORD（EV1 存量） |
-| 人工录入数据（生产计划类） | Web 录入接口或外部系统（MES/ERP）导入 | 目标数量 / 实际完成（白班/夜班）/ 成品入库 / 出货 / 产线成品剩余 | 核心 10 行 | TBL_DAILY_PRODUCTION_PLAN（R4 新增） |
+| 人工录入数据（生产计划类，传统模式） | Web 录入接口或外部系统（MES/ERP）导入 | 目标数量（行1）/ 成品入库（行7）/ 出货（行8）/ 产线成品剩余（行10） | 核心 10 行 | TBL_DAILY_PRODUCTION_PLAN（R4 新增，value 字段） |
+| 人工录入数据（R2-AMENDMENT 箱数换算模式） | Web 录入接口录入 carton_count + loose_quantity | 整箱数 carton_count / 散件数 loose_quantity（行2-行5） | 核心 10 行（行2-行5） | TBL_DAILY_PRODUCTION_PLAN（R4 新增，carton_count/loose_quantity 字段） |
+| 配置数据（R2-AMENDMENT 装箱规格） | 装箱规格配置接口（PM 裁决后写入） | 每箱标准装箱数 units_per_carton | 行2-行5 actual_quantity 计算输入 | TBL_CARTON_SPECIFICATION（R2-AMENDMENT 新增） |
+| 自动计算数据（R2-AMENDMENT 实际产出件数） | report_service 自动计算 = carton_count × units_per_carton + loose_quantity | 实际产出件数 actual_quantity（行2-行5） | 核心 10 行（行2-行5 主显示值） | TBL_DAILY_PRODUCTION_PLAN（R4 新增，actual_quantity 字段，AUTO_CALC） |
+
+**R2-AMENDMENT 数据来源标注扩展**（spec.md §16.4.3 + §18.2.4）：
+- `carton_count`：MANUAL（人工录入，来源于源系统 quantity 或人工录入）
+- `units_per_carton`（snapshot）：CONFIG（从 TBL_CARTON_SPECIFICATION 读取并冻结为快照）
+- `loose_quantity`：MANUAL（人工录入）
+- `actual_quantity`：AUTO_CALC（系统自动计算 = carton_count × units_per_carton + loose_quantity，禁止人工录入）
+- 报表行2-行5 主显示值取 actual_quantity，**禁止**显示 carton_count 原值（spec.md §18.2.4 第 3 项）
 
 ### 3.7.2 核心行 vs 参考区域
 
@@ -2530,17 +2832,18 @@ web/src/pages/reports/
 - 标签补打数据（A/B/D）**可**从 `TBL_PRODUCTION_RECORD` 自动填充至独立参考区域
 - **禁止**自动填充至核心数据行（spec.md §18.3.2 第 1 项）
 
-**report_service 编排逻辑**（数据分离的运行时保障）：
+**report_service 编排逻辑**（数据分离的运行时保障，含 R2-AMENDMENT 箱数换算）：
 ```plantuml
 @startuml
-title report_service 数据分离编排
+title report_service 数据分离编排（含 R2-AMENDMENT 箱数换算）
 
 start
 :接收报表请求(start_date, end_date);
 
 fork
   :读取 TBL_DAILY_PRODUCTION_PLAN\n(核心行 1/2/3/4/5/7/8/10);
-  :计算行6 = 行2+3+4+5 (按日列);
+  :R2-AMENDMENT: 行2-行5 取 actual_quantity\n(= carton_count × units_per_carton_snapshot + loose_quantity);
+  :计算行6 = 行2+3+4+5 (按日列)\n(R2-AMENDMENT: 禁止包含行1 目标);
   :计算行9 = 累计入库 - 累计出货;
   :计算各行累计列;
 fork again
@@ -2549,7 +2852,7 @@ end fork
 
 :合并为核心矩阵 + 参考区域\n(物理隔离, 不混排);
 :读取 TBL_HOLIDAY_CALENDAR\n应用黄色标注;
-:标注数据来源(MANUAL/AUTO_CALC/REFERENCE);
+:标注数据来源\n(MANUAL/CONFIG/AUTO_CALC/CARTON_CALC/REFERENCE);
 :返回报表矩阵;
 
 note right
@@ -2557,6 +2860,10 @@ note right
   1. 核心行 ← SUM(TBL_PRODUCTION_RECORD.quantity)
   2. 参考区域数据写入 TBL_DAILY_PRODUCTION_PLAN
   3. SQL JOIN 两表推导核心行
+  4. R2-AMENDMENT: 行2-行5 显示 carton_count 原值
+  5. R2-AMENDMENT: actual_quantity 人工录入
+  6. R2-AMENDMENT: units_per_carton 硬编码
+  7. R2-AMENDMENT: 行6 包含行1 目标数量
 end note
 
 stop
@@ -2565,21 +2872,32 @@ stop
 ```
 
 **数据分离的物理保障**：
-- `TBL_DAILY_PRODUCTION_PLAN` 与 `TBL_PRODUCTION_RECORD` **无外键、无 JOIN**（§3.3.5 协调策略）
+- `TBL_DAILY_PRODUCTION_PLAN` 与 `TBL_PRODUCTION_RECORD` **无外键、无 JOIN**（§3.3.6 协调策略）
 - report_service 分别独立读取两表，在应用层内存中合并为报表矩阵，从架构上杜绝误推导
-- 标签补打参考接口（§3.4.6）独立暴露，不提供写入核心行能力
+- 标签补打参考接口（§3.4.7）独立暴露，不提供写入核心行能力
+- **R2-AMENDMENT**：units_per_carton 必须从 TBL_CARTON_SPECIFICATION 读取，**禁止**硬编码；actual_quantity 必须由公式自动计算，**禁止**人工录入（spec.md §18.7.4 第 9 项 + §18.7.5 第 7/8 项）
 
 ### 3.7.3 数据来源标注
 
-> 对应 spec.md §18.3 数据来源分离策略的可见性要求。在报表中明确标注数据来源，便于审计与追溯。
+> 对应 spec.md §18.3 数据来源分离策略的可见性要求 + §16.4.3 R2-AMENDMENT 对 R4 数据模型的影响。在报表中明确标注数据来源，便于审计与追溯。
 
 | 标注值 | 含义 | 应用位置 |
 |--------|------|---------|
-| MANUAL | 人工录入数据 | 核心行 1/2/3/4/5/7/8/10 各单元格 |
-| AUTO_CALC | 系统自动计算 | 核心行 6（合计）/ 行 9（库存）各单元格 |
+| MANUAL | 人工录入数据 | 核心行 1/7/8/10 各单元格（传统录入 value）；行2-行5 的 carton_count/loose_quantity 字段（R2-AMENDMENT 箱数换算模式人工录入） |
+| CONFIG | 配置数据（R2-AMENDMENT 新增） | 行2-行5 的 units_per_carton_snapshot 字段（从 TBL_CARTON_SPECIFICATION 读取并冻结为快照） |
+| AUTO_CALC | 系统自动计算 | 核心行 6（合计）/ 行 9（库存）各单元格；行2-行5 的 actual_quantity 字段（R2-AMENDMENT，= carton_count × units_per_carton + loose_quantity） |
+| CARTON_CALC | 箱数换算模式（R2-AMENDMENT 新增） | 核心行 2/3/4/5 各单元格主显示值（取 actual_quantity，经箱数换算后的实际件数） |
 | REFERENCE | 自动采集参考数据 | 参考区域 A/B/D 各单元格 |
 
-**前端渲染**：每个单元格角标显示数据来源标签（如小字"人工"/"自动"/"参考"），导出 Excel 时在数据来源说明行（§3.5.2 行19）统一说明（spec.md §18.4.4 第 3 项导出完整性规则：前端预览与导出一致）。
+**前端渲染**：
+- 每个单元格角标显示数据来源标签（如小字"人工"/"配置"/"自动"/"箱数换算"/"参考"）
+- 行2-行5 单元格主显示 actual_quantity，角标标注"CARTON_CALC"；辅助列显示 carton_count/units_per_carton/loose_quantity/actual_quantity 明细，分别标注 MANUAL/CONFIG/AUTO_CALC
+- 导出 Excel 时在数据来源说明行（§3.5.2 行19）统一说明（spec.md §18.4.4 第 3 项导出完整性规则：前端预览与导出一致）
+
+**R2-AMENDMENT 数据来源审计要点**（spec.md §16.4.4 + §18.2.4）：
+- actual_quantity 必须可追溯至 carton_count × units_per_carton + loose_quantity 公式（辅助列提供完整明细）
+- units_per_carton_snapshot 必须可追溯至 TBL_CARTON_SPECIFICATION 配置记录（config_by/config_at 审计）
+- **禁止**行2-行5 主显示列出现 carton_count 原值（如 17），必须显示 actual_quantity（如 519）（spec.md §18.2.4 第 3 项）
 
 ## 3.8 与现有架构集成
 
@@ -2591,7 +2909,7 @@ stop
 
 ```plantuml
 @startuml
-title R4 后端模块集成（在 hwview-server 内新增）
+title R4 后端模块集成（在 hwview-server 内新增，含 R2-AMENDMENT 装箱规格配置）
 
 package "hwview-server (EV1 存量)" {
   component [REST API Layer] as API
@@ -2605,22 +2923,28 @@ package "R4 新增模块" #LightBlue {
   component [ExcelExporter\n(excelize 生成)] as ExcelExp
   component [DailyProductionPlanRepo] as PlanRepo
   component [HolidayRepo] as HolidayRepo
+  component [CartonSpecRepo\n(R2-AMENDMENT 新增)] as CartonRepo
 }
 
 database "TBL_DAILY_PRODUCTION_PLAN" as PlanTbl
 database "TBL_HOLIDAY_CALENDAR" as HolidayTbl
+database "TBL_CARTON_SPECIFICATION\n(R2-AMENDMENT)" as CartonTbl
 database "TBL_PRODUCTION_RECORD\n(EV1 存量)" as RecTbl
 database "TBL_AUDIT_LOG\n(EV1 存量)" as AuditTbl
 
 API --> Auth
 API --> ReportSvc
+API --> CartonRepo : /api/v1/config/carton-spec\n(R2-AMENDMENT)
 ReportSvc --> PlanRepo
 ReportSvc --> HolidayRepo
+ReportSvc --> CartonRepo : 读取 units_per_carton\n(行2-行5 录入时, R2-AMENDMENT)
 ReportSvc --> StatsEng : 复用聚合 A/B/D
 ReportSvc --> ExcelExp
 ReportSvc --> Audit
+CartonRepo --> Audit : 配置审计
 PlanRepo --> PlanTbl
 HolidayRepo --> HolidayTbl
+CartonRepo --> CartonTbl
 StatsEng --> RecTbl
 Audit --> AuditTbl
 
@@ -2628,19 +2952,24 @@ Audit --> AuditTbl
 ```
 
 **新增文件清单**：
-- `internal/server/report_service.go`：报表聚合 + 数据分离编排 + 自动计算
-- `internal/server/excel_exporter.go`：excelize 生成 .xlsx + 颜色编码
+- `internal/server/report_service.go`：报表聚合 + 数据分离编排 + 自动计算 + R2-AMENDMENT actual_quantity 计算
+- `internal/server/excel_exporter.go`：excelize 生成 .xlsx + 颜色编码 + R2-AMENDMENT 辅助列
 - `internal/server/api/report_handler.go`：R4 REST API handler（注册到 §2.2.1 router）
+- `internal/server/api/carton_spec_handler.go`：**R2-AMENDMENT 新增**装箱规格配置 API handler
 - `internal/store/daily_production_plan_repo.go`：日计划 CRUD 仓储
 - `internal/store/holiday_repo.go`：节假日 CRUD 仓储
+- `internal/store/carton_spec_repo.go`：**R2-AMENDMENT 新增**装箱规格配置 CRUD 仓储
 - `internal/store/migration/daily_production_plan.go`：GORM AutoMigrate 注册
 - `internal/store/migration/holiday_calendar.go`：GORM AutoMigrate 注册
-- `pkg/model/daily_production_plan.go`：领域对象
-- `pkg/model/holiday_calendar.go`：4领域对象
+- `internal/store/migration/carton_specification.go`：**R2-AMENDMENT 新增**GORM AutoMigrate 注册
+- `pkg/model/daily_production_plan.go`：领域对象（含 R2-AMENDMENT carton_count/units_per_carton_snapshot/loose_quantity/actual_quantity 字段）
+- `pkg/model/holiday_calendar.go`：领域对象
+- `pkg/model/carton_specification.go`：**R2-AMENDMENT 新增**领域对象
 
 **接入点**：
-- REST API handler 在 `internal/server/router.go` 注册 `/api/v1/reports/*` 路由组（继承 §2.2.1 版本前缀策略）
+- REST API handler 在 `internal/server/router.go` 注册 `/api/v1/reports/*` 路由组 + `/api/v1/config/carton-spec` 路由（R2-AMENDMENT，继承 §2.2.1 版本前缀策略）
 - ReportService 复用 Statistics Engine（§2.6）聚合 A/B/D，不重复实现聚合 SQL
+- ReportService 在录入行2-行5 时调用 CartonSpecRepo.GetEffectiveSpec(line_code, product_code, plan_date) 读取 units_per_carton，写入 units_per_carton_snapshot 并计算 actual_quantity（R2-AMENDMENT）
 - Auth Middleware（§2.2.2.1 前置条件）扩展"生产管理员"角色判定
 
 ### 3.8.2 前端目录新增
@@ -2656,15 +2985,16 @@ Audit --> AuditTbl
 
 ### 3.8.3 GORM AutoMigrate 协调
 
-> 对应任务要求"使用 GORM AutoMigrate" + §3.3.5 与现有7张表协调。
+> 对应任务要求"使用 GORM AutoMigrate" + §3.3.6 与现有7张表协调。
 
 **迁移注册设计**：
 - 在 `internal/store/migration/migration.go` 的统一迁移函数中追加：
   1. 现有 7 张表迁移（保持 EV1 顺序，design.md §2.3.2.2-2.3.2.8）
-  2. `AutoMigrate(&DailyProductionPlan{})`（R4 新增）
-  3. `AutoMigrate(&HolidayCalendar{})`（R4 新增）
-- 新增 2 张表无外键依赖，迁移顺序无约束，但置于存量表之后以保持迁移日志清晰
-- GORM AutoMigrate 自动创建表与索引，UNIQUE 约束通过 struct tag 声明（`gorm:"uniqueIndex:idx_name"`）
+  2. `AutoMigrate(&CartonSpecification{})`（R2-AMENDMENT 新增，优先于 DailyProductionPlan，因后者录入时需读取前者配置）
+  3. `AutoMigrate(&DailyProductionPlan{})`（R4 新增）
+  4. `AutoMigrate(&HolidayCalendar{})`（R4 新增）
+- 新增 3 张表中 TBL_CARTON_SPECIFICATION 必须先于 TBL_DAILY_PRODUCTION_PLAN 迁移（配置表优先，避免录入时无配置可读）；TBL_HOLIDAY_CALENDAR 无依赖，顺序无约束
+- GORM AutoMigrate 自动创建表与索引，UNIQUE 约束通过 struct tag 声明（`gorm:"uniqueIndex:idx_name"`）；CHECK 约束通过 `gorm:"check:..."` 或迁移后手动执行 DDL 补充（SQLite/PostgreSQL 方言差异，由 migration.go 处理）
 
 ### 3.8.4 角色与权限扩展
 
@@ -2687,55 +3017,71 @@ Audit --> AuditTbl
 
 ## 3.9 R4 红线与裁决约束落实
 
-> 对应 spec.md §18.1.2 裁决约束继承 + §18.10 验收基准。本节明确设计中如何落实每项 R4 约束。
+> 对应 spec.md §18.1.2 裁决约束继承 + §18.10 验收基准 + §16.4.4 R2-AMENDMENT 关键约束。本节明确设计中如何落实每项 R4 约束，含 R2-AMENDMENT 新增的三项关键约束。
 
 | 约束编号 | 约束内容 | 设计中的落实措施 | 追溯章节 |
 |---------|---------|----------------|---------|
-| R2 继承 | 核心行禁止来自 TBL_PRODUCTION_RECORD.quantity 求和 | TBL_DAILY_PRODUCTION_PLAN 与 TBL_PRODUCTION_RECORD 物理隔离（无外键/无 JOIN）；report_service 分别读取两表，应用层编排；核心行仅从 TBL_DAILY_PRODUCTION_PLAN 读取 | 3.3.4 / 3.7.2 / 3.8.1 |
-| R3 继承 | 核心行必须人工录入或外部导入 | 提供 DailyProductionPlan CRUD 接口（§3.4.2）+ 前端录入表单（§3.6.3）；核心行数据来源标注 MANUAL | 3.4.2 / 3.6.3 / 3.7.3 |
-| Production Quantity FROZEN | 标签补打数据仅作参考区域 | ReportLabelReprintReference 非持久化对象，仅用于参考区域渲染；标签补打参考接口（§3.4.6）不提供写入核心行能力；数据来源标注 REFERENCE | 3.3.4 / 3.4.6 / 3.7.2 |
-| 命名合规 | 报表命名"102日产出计划"，禁含"生产数量" | 界面标题/文件名/API 路径均含"102日产出计划"；导出文件名 `102日产出计划报表_YYYYMMDD-YYYYMMDD.xlsx` | 3.1.2 / 3.4.5 |
+| R2 继承 | 核心行禁止来自 TBL_PRODUCTION_RECORD.quantity 求和 | TBL_DAILY_PRODUCTION_PLAN 与 TBL_PRODUCTION_RECORD 物理隔离（无外键/无 JOIN）；report_service 分别读取两表，应用层编排；核心行仅从 TBL_DAILY_PRODUCTION_PLAN 读取 | 3.3.5 / 3.7.2 / 3.8.1 |
+| R3 继承 | 核心行必须人工录入或外部导入 | 提供 DailyProductionPlan CRUD 接口（§3.4.2）+ 前端录入表单（§3.6.3）；核心行数据来源标注 MANUAL/CARTON_CALC | 3.4.2 / 3.6.3 / 3.7.3 |
+| Production Quantity FROZEN | 标签补打数据仅作参考区域 | ReportLabelReprintReference 非持久化对象，仅用于参考区域渲染；标签补打参考接口（§3.4.7）不提供写入核心行能力；数据来源标注 REFERENCE | 3.3.5 / 3.4.7 / 3.7.2 |
+| 命名合规 | 报表命名"102日产出计划"，禁含"生产数量" | 界面标题/文件名/API 路径均含"102日产出计划"；导出文件名 `102日产出计划报表_YYYYMMDD-YYYYMMDD.xlsx` | 3.1.2 / 3.4.6 |
 | 报表隔离 | 不与标签补打记录报表合并 | 核心矩阵与参考区域分属不同区块（§3.5.2 矩阵布局行14-17 独立参考区域） | 3.5.2 / 3.7.2 |
-| 行顺序冻结 | 10 行顺序禁止调整 | ReportRow.RowNo 1-10 固定映射 §18.2.2 行名称；excel_exporter 按固定顺序写入 | 3.5.2 / 3.4.4 |
+| 行顺序冻结 | 10 行顺序禁止调整 | ReportRow.RowNo 1-10 固定映射 §18.2.2 行名称；excel_exporter 按固定顺序写入 | 3.5.2 / 3.4.5 |
 | 自动计算行禁录 | 行6/行9 禁止人工录入 | 录入接口校验 row_no ∉ {6,9}，返回 409；前端表单排除行6/行9 选项 | 3.4.2 / 3.6.3 |
-| 数据来源分离 | 两类数据禁止混排 | report_service 物理隔离编排；数据来源标注 MANUAL/AUTO_CALC/REFERENCE | 3.7.1 / 3.7.2 / 3.7.3 |
+| 数据来源分离 | 两类数据禁止混排 | report_service 物理隔离编排；数据来源标注 MANUAL/CONFIG/AUTO_CALC/CARTON_CALC/REFERENCE | 3.7.1 / 3.7.2 / 3.7.3 |
 | 导出完整性 | Excel 与前端预览一致 | 共用 report_service.Aggregate() 单一数据源；颜色编码统一由 §3.5.3 定义 | 3.5.5 / 3.6.2 |
-| 录入审计 | 录入/覆盖/导出记录审计 | 所有写入操作写 TBL_AUDIT_LOG（action=REPORT_INPUT/REPORT_EXPORT/HOLIDAY_CONFIG，含旧值/新值） | 3.4.2 / 3.4.5 / 3.4.3 |
+| 录入审计 | 录入/覆盖/导出记录审计 | 所有写入操作写 TBL_AUDIT_LOG（action=REPORT_INPUT/REPORT_EXPORT/HOLIDAY_CONFIG/CARTON_SPEC_CONFIG，含旧值/新值） | 3.4.2 / 3.4.6 / 3.4.3 / 3.4.4 |
 | 节假日可配置 | 禁止硬编码节假日 | TBL_HOLIDAY_CALENDAR 配置表 + CRUD 接口 + 前端配置页 | 3.3.3 / 3.4.3 / 3.6.4 |
+| **R2-AMENDMENT units_per_carton 禁止硬编码**（spec.md §16.4.4 第 1 项 + §18.7.4 第 9 项 + §18.9.4 第 3 项） | units_per_carton 必须通过 TBL_CARTON_SPECIFICATION 配置对象管理，禁止硬编码于源代码/配置文件常量/Adapter 内 | TBL_CARTON_SPECIFICATION 配置表 + 装箱规格配置接口（§3.4.4）+ report_service 从配置表读取 units_per_carton 写入 units_per_carton_snapshot；源代码审查不出现 `units_per_carton = 30` 或 `UNITS_PER_CARTON = 60` 等硬编码常量 | 3.3.4 / 3.4.4 / 3.7.1 |
+| **R2-AMENDMENT actual_quantity 必须由公式计算**（spec.md §16.4.4 第 3 项 + §18.7.5 第 7/8 项） | actual_quantity 为计算字段，必须由公式 `carton_count × units_per_carton + loose_quantity` 自动计算，禁止人工录入 | TBL_DAILY_PRODUCTION_PLAN actual_quantity 字段由 report_service 自动计算填充 + CHECK 约束兜底 + 录入接口拒绝请求体含 actual_quantity（返回 422）+ 前端表单不提供 actual_quantity 输入框 | 3.3.2 / 3.4.2 / 3.7.1 |
+| **R2-AMENDMENT 实际完成合计公式修正**（spec.md §18.4.1 第 4/5 项） | 行6 = 行2 + 行3 + 行4 + 行5，禁止包含行1 目标数量行；目标与实际分离 | report_service 行6 计算公式明确为行2+3+4+5，excel_exporter 同步；行1 与行6 独立呈现，禁止合并或相加 | 3.4.5 / 3.5.4 |
+| **R2-AMENDMENT 行2-行5 显示 actual_quantity**（spec.md §18.2.4 第 3 项） | 报表行2-行5 主显示列必须显示 actual_quantity，禁止显示 carton_count 原值 | report_service 行2-行5 Values 取 actual_quantity + excel_exporter 主显示列写 actual_quantity + 辅助列显示 carton_count/units_per_carton/loose_quantity 明细 | 3.4.5 / 3.5.2 / 3.5.5 |
+| **R2-AMENDMENT 装箱数歧义待 PM 裁决**（spec.md §16.4.4 第 2 项 + §18.2.4 第 2 项） | §18.2.3 "60 只/箱"与 R2-AMENDMENT "30 件/箱"歧义，必须由 PM 裁决，裁决前禁止硬编码任一数值 | TBL_CARTON_SPECIFICATION units_per_carton 字段值由 PM 裁决后通过配置接口写入；裁决前源代码不出现 30 或 60 硬编码，配置表允许 PM 写入裁决值 | 3.3.4 / 3.4.4 |
+| **R2-AMENDMENT R2 核心结论保持**（spec.md §16.4.4 第 4 项） | R2-AMENDMENT 不改变 R2 核心结论"quantity 不是生产件数"，仅修正 quantity 具体语义 | 报表行2-行5 数据来源仍不直接使用源系统 quantity 原值，需经 actual_quantity 公式转换（carton_count 来自源系统 quantity，但经换算为 actual_quantity 后才进入核心行） | 3.7.1 / 3.7.2 |
 
 ## 3.10 与 spec.md §18 的追溯矩阵
 
-> 对应 spec.md §18 各需求条款，确保设计覆盖所有 R4 需求。
+> 对应 spec.md §18 各需求条款 + §16.4 R2-AMENDMENT，确保设计覆盖所有 R4 需求与 R2-AMENDMENT 修正项。
 
-| spec.md §18 需求条款 | 需求内容 | design.md 对应设计章节 |
-|---------------------|---------|---------------------|
+| spec.md 需求条款 | 需求内容 | design.md 对应设计章节 |
+|------------------|---------|---------------------|
+| §16.4 R2-AMENDMENT | quantity=17 为 carton_count，actual_quantity = 17 × 30 + 9 = 519 | 3.3.2 / 3.3.4 / 3.4.2 / 3.4.4 / 3.5.4 / 3.7.1 / 3.9 |
+| §16.4.1 新业务证据 | carton_count/units_per_carton/loose_quantity/actual_quantity 字段语义 | 3.3.2 TBL_DAILY_PRODUCTION_PLAN DDL + 3.7.1 数据来源分类 |
+| §16.4.2 R2 裁决修正项 | quantity 语义修正为 carton_count，数据源性质修正为 Carton Count Event Source | 3.7.1 数据来源分类 + 3.9 R2-AMENDMENT R2 核心结论保持 |
+| §16.4.3 对 R4 数据模型的影响 | carton_count/units_per_carton/loose_quantity/actual_quantity 四字段 | 3.3.2 / 3.3.4 / 3.3.5 领域对象类图 |
+| §16.4.4 关键约束 | units_per_carton 配置化 + 装箱数歧义待裁决 + actual_quantity 自动计算 + R2 核心结论保持 | 3.3.4 / 3.4.4 / 3.9 R4 红线落实 |
 | §18.1.1 核心职责 | 生成与导出 102 产线日产出计划跟踪报表 | 3.4 接口设计 + 3.5 Excel 导出 |
 | §18.1.2 裁决约束继承 | R2/R3/FROZEN 三项约束 | 3.1.1 裁决约束继承 + 3.9 红线落实 |
 | §18.1.3 命名规则 | 报表命名合规 + 报表隔离 | 3.1.2 命名合规约束 + 3.9 红线落实 |
 | §18.2.1 列结构 | 日期列 + 累计列 + 节假日黄色标注 | 3.5.2 矩阵结构 + 3.5.3 颜色编码 |
-| §18.2.2 行结构 | 10 行顺序 + 颜色编码 | 3.5.2 矩阵结构 + 3.5.3 颜色编码 + 3.4.4 ReportRow |
+| §18.2.2 行结构 | 10 行顺序 + 颜色编码 | 3.5.2 矩阵结构 + 3.5.3 颜色编码 + 3.4.5 ReportRow |
 | §18.2.3 业务台账基准 | 2026-09-06 E1/E2/E3/E4 校验 | 3.5.4 自动计算行（业务台账基准校验） |
+| §18.2.4 箱数/散件/实际件数验收基准（R2-AMENDMENT） | carton_count=17/units_per_carton=30/loose_quantity=9/actual_quantity=519 校验 | 3.3.2 / 3.4.2 / 3.4.5 / 3.5.2 / 3.5.4 / 3.9 |
 | §18.3.1 数据来源分类 | 自动采集 vs 人工录入分离 | 3.7.1 数据来源分类 |
 | §18.3.1 数据分离规则 | 标签补打禁止进入核心行 | 3.7.2 核心行 vs 参考区域 |
-| §18.3.2 自动填充范围 | 参考区域可自动填充，核心行禁止 | 3.7.2 + 3.4.6 标签补打参考接口 |
+| §18.3.2 自动填充范围 | 参考区域可自动填充，核心行禁止 | 3.7.2 + 3.4.7 标签补打参考接口 |
 | §18.4.1 累计计算规则 | 累计列/合计行/库存行自动计算 | 3.5.4 自动计算行与累计列 |
+| §18.4.1 第 4 项 实际完成合计公式约束（R2-AMENDMENT） | 行6 = 行2+行3+行4+行5，禁止包含行1 | 3.4.5 / 3.5.4 / 3.9 |
+| §18.4.1 第 5 项 实际完成合计与目标分离（R2-AMENDMENT） | 行1 与行6 独立呈现，禁止合并或相加 | 3.4.5 / 3.5.4 / 3.9 |
 | §18.4.2 人工录入规则 | 角色/粒度/覆盖/禁录自动行 | 3.4.2 CRUD 接口 + 3.6.3 录入表单 + 3.8.4 权限 |
 | §18.4.3 节假日配置规则 | 黄色标注 + 可配置 + 允许录入 | 3.3.3 TBL_HOLIDAY_CALENDAR + 3.4.3 CRUD + 3.6.4 配置页 |
-| §18.4.4 导出规则 | .xlsx 格式 + 命名 + 完整性 | 3.4.5 导出接口 + 3.5 Excel 导出实现 |
+| §18.4.4 导出规则 | .xlsx 格式 + 命名 + 完整性 | 3.4.6 导出接口 + 3.5 Excel 导出实现 |
 | §18.5.1 人工录入流程 | 登录→校验→写入→重算→返回 | 3.6.3 录入表单交互流程 |
-| §18.5.2 报表生成导出流程 | 聚合→参考→计算→标注→导出 | 3.4.4 聚合接口 + 3.5.5 导出流程 + 3.7.2 编排 |
-| §18.6 异常场景 | 录入缺失/禁录行/冲突/导出失败/混排 | 3.4.2 异常映射 + 3.4.5 异常映射 + 3.6.5 导出失败 + 3.9 混排拒绝 |
+| §18.5.2 报表生成导出流程 | 聚合→参考→计算→标注→导出 | 3.4.5 聚合接口 + 3.5.5 导出流程 + 3.7.2 编排 |
+| §18.6 异常场景 | 录入缺失/禁录行/冲突/导出失败/混排 | 3.4.2 异常映射 + 3.4.6 异常映射 + 3.6.5 导出失败 + 3.9 混排拒绝 |
 | §18.7.1 DailyProductionPlan | 日期/行号/数值/录入人/时间/禁录行 | 3.3.2 TBL_DAILY_PRODUCTION_PLAN DDL |
 | §18.7.2 HolidayCalendar | 日期/名称/是否休息/配置人/时间 | 3.3.3 TBL_HOLIDAY_CALENDAR DDL |
-| §18.7.3 ReportLabelReprintReference | A/B/D 来源 + 用途约束 | 3.3.4 领域对象类图 + 3.4.6 参考接口 |
+| §18.7.3 ReportLabelReprintReference | A/B/D 来源 + 用途约束 | 3.3.5 领域对象类图 + 3.4.7 参考接口 |
+| §18.7.4 CartonSpecification（R2-AMENDMENT） | 装箱规格配置：line_code/product_code/units_per_carton/effective_from/effective_to + 时间段唯一性 + 配置化优先 | 3.3.4 TBL_CARTON_SPECIFICATION DDL + 3.4.4 装箱规格配置接口 + 3.9 红线落实 |
+| §18.7.5 CartonBasedActualQuantity（R2-AMENDMENT） | 基于箱数的实际产出：carton_count/units_per_carton/loose_quantity/actual_quantity + 公式计算约束 + 与报表行对应 | 3.3.2 / 3.3.5 领域对象类图 + 3.4.2 CRUD + 3.4.5 聚合接口 + 3.9 红线落实 |
 | §18.8.1 新增角色 | 生产管理员 | 3.8.4 角色与权限扩展 |
 | §18.8.2 角色权限约束 | 录入权限 + 导出权限 | 3.8.4 权限矩阵 + 3.4 各接口前置条件 |
-| §18.9.1 性能 | 预览 ≤3s + 导出 ≤5s | 3.4.4 性能约束 + 3.4.5 性能约束 |
-| §18.9.2 安全性 | 录入审计 + 导出审计 | 3.4.2/3.4.5 后置条件 + 3.9 红线落实 |
-| §18.9.3 兼容性 | 技术栈继承 + 表命名 TBL_ | 3.5.1 库选型 + 3.3.2/3.3.3 表命名 + 3.6 TypeScript Strict |
-| §18.9.4 可维护性 | 节假日可配置 + 行结构可配置 | 3.6.4 节假日配置页 + 3.5.2 行顺序冻结（默认 10 行） |
-| §18.10 验收基准 | R4 Evidence Gate | 3.9 红线落实 + 3.5.4 业务台账基准校验 |
+| §18.9.1 性能 | 预览 ≤3s + 导出 ≤5s | 3.4.5 性能约束 + 3.4.6 性能约束 |
+| §18.9.2 安全性 | 录入审计 + 导出审计 | 3.4.2/3.4.6 后置条件 + 3.9 红线落实 |
+| §18.9.3 兼容性 | 技术栈继承 + 表命名 TBL_ | 3.5.1 库选型 + 3.3.2/3.3.3/3.3.4 表命名 + 3.6 TypeScript Strict |
+| §18.9.4 可维护性 | 节假日可配置 + 行结构可配置 + 装箱规格配置化（R2-AMENDMENT） | 3.6.4 节假日配置页 + 3.5.2 行顺序冻结 + 3.3.4 / 3.4.4 装箱规格配置化 |
+| §18.10 验收基准 | R4 Evidence Gate（含 R2-AMENDMENT 装箱规格配置化/实际件数计算/合计公式修正/装箱数歧义裁决） | 3.9 红线落实 + 3.5.4 业务台账基准校验 + 3.5.4 R2-AMENDMENT 箱数换算基准校验 |
 
 ---
 
-> 文档结束。本 design.md 承接 spec.md 的"要做什么"，定义"怎么做"（架构/数据/接口/流程/部署）。§一、§二覆盖 EV1 主链（2.1-2.14），§三覆盖 EV1-R4 102日产出计划导出报表增量设计（3.1-3.10）。后续任务分解由 spec-task-agent 承担，代码实现由开发阶段承担。
+> 文档结束。本 design.md 承接 spec.md 的"要做什么"，定义"怎么做"（架构/数据/接口/流程/部署）。§一、§二覆盖 EV1 主链（2.1-2.14），§三覆盖 EV1-R4 102日产出计划导出报表增量设计（3.1-3.10），含 2026-09-08 R2-AMENDMENT 设计同步更新（§3.3.2/§3.3.4/§3.3.5/§3.3.6 数据模型 + §3.4.2/§3.4.4/§3.4.5 接口 + §3.5.2/§3.5.4/§3.5.5 Excel 导出 + §3.7.1/§3.7.2/§3.7.3 数据分离 + §3.9 红线 + §3.10 追溯矩阵）。后续任务分解由 spec-task-agent 承担，代码实现由开发阶段承担。
