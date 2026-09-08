@@ -390,6 +390,12 @@ TG4 --> TG3
   EV2-01→EV2-02→EV2-03
    ↓
 [阶段 2.5 EV1-R4 报表增量]（EV1 主链 + EV2 + Deploy 完成后启动）
+  > **STATUS: R4-001~004 CODING COMPLETE + R4-005 DEPLOYMENT VERIFIED (2026-09-08)**
+  > - R4-001 DB层: 3表+3仓储 PASS | R4-002 服务层: report_service+Excel+API PASS
+  > - R4-003 前端: 4页面+hooks PASS | R4-004 测试: 5单元测试全PASS
+  > - R4-005 部署: E2E验证 PASS — row1=2000, row2=305, row5=519(R2-AMENDMENT), row6=824=row2+row3+row5(R4-BLOCKER-02)
+  > - 修复: SQLite date格式 "2026-09-07T00:00:00Z" → normalizeDate() 提取YYYY-MM-DD (commit 868144b)
+  > - 待完成: 前端npm build(需Node.js环境) + R4 Evidence包生成 + PM裁决
   R4-001-01∥R4-001-02∥R4-001-07 → R4-001-03 → R4-001-04∥R4-001-05∥R4-001-08 → R4-001-06∥R4-001-09
   → R4-002-01 → R4-002-02 → R4-002-03∥R4-002-04 → R4-002-05 → R4-002-06 → R4-002-07 → R4-002-10 → R4-002-08∥R4-002-09
   → R4-003-01 → R4-003-02 → R4-003-03 → R4-003-04∥R4-003-05∥R4-003-07 → R4-003-06
@@ -2381,7 +2387,7 @@ TG4 --> TG3
 
 - **里程碑 M1**：阶段 0 + 阶段 1 主链完成（TASK-HWV-EV1-001~009 全部子任务通过）
 - **里程碑 M2**：阶段 2 支链完成（Dashboard 可访问 + 部署脚本可用 + EV2 接口预定义就位）
-- **里程碑 M3（R4）**：阶段 2.5 R4 报表增量完成（5 个主任务 / 35 个子任务全部通过 + R4 Evidence Gate PM 裁决 PASS）
+- **里程碑 M3（R4）**：阶段 2.5 R4 报表增量完成（5 个主任务 / 35 个子任务全部通过 + R4 Evidence Gate PM 裁决 PASS）— **R4-001~005 编码+部署验证完成 (2026-09-08)，待前端build+Evidence包+PM裁决**
 - **里程碑 M4**：阶段 3 测试全部通过（单元/集成/端到端/静态检查 + R4 测试）
 - **里程碑 M5**：阶段 4 Evidence Gate 完成，PM 裁决通过（PASS）
 
