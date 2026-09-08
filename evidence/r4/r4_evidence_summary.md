@@ -117,3 +117,72 @@
 2. 多日累计列包含混入的历史测试数据（09-07/09-08），生产切换前建议清库或仅录真实台账。
 3. 前端登录密钥存 localStorage（单管理员场景可接受），EV2 若引入多用户需升级为会话/token 过期机制。
 4. Source semantic ambiguity：源系统 quantity=17 与 carton_count=17 数值巧合，生产中需业务人员确认映射关系。
+
+## 10. R4-DATA-SEMANTIC-02 Dashboard 生产统计语义修复（2026-09-08）
+
+### 修复内容
+
+Dashboard `/statistics/overview` 数据源从 `TBL_PRODUCTION_RECORD` 切换为 `TBL_DAILY_PRODUCTION_PLAN`：
+- `BoxCount = SUM(carton_count) WHERE actual_quantity IS NOT NULL`
+- `PieceCount = SUM(actual_quantity) WHERE actual_quantity IS NOT NULL`
+- `TBL_PRODUCTION_RECORD.quantity` 不再参与 Dashboard 生产统计
+
+### 验证结果
+
+| 日期 | 修复前 box_count | 修复后 box_count | 修复前 piece_count | 修复后 piece_count |
+|------|-----------------|-----------------|-------------------|-------------------|
+| 2026-09-07 | 30 (COUNT(*)) | 27 (SUM(carton_count)) | 510 (SUM(quantity)) | 824 (SUM(actual_quantity)) |
+| 2026-09-08 | 529 (COUNT(*)) | 17 (SUM(carton_count)) | 11,594 (SUM(quantity)) | 519 (SUM(actual_quantity)) |
+
+### 测试覆盖
+
+7 项单元测试全 PASS + 全量回归 22 项全 PASS。详见 `r4_data_semantic_02_final_evidence.md`。
+
+---
+
+## 11. EV1-R4 Final Gate Review 裁决（2026-09-08）
+
+### 总设计师最终裁决
+
+| Gate | 状态 |
+|------|------|
+| EV1-R1 Real Collection | 🟢 PASS / CLOSED |
+| EV1-R2 Business Quantity Semantics | 🟢 PASS / CLOSED |
+| EV1-R3 Production Source Discovery | 🟢 PASS / CLOSED |
+| EV1-R4 Coding | 🟢 PASS |
+| R4-DATA-SEMANTIC-01 | 🟢 PASS |
+| R4-DATA-SEMANTIC-02 Design | 🟢 PASS |
+| R4-DATA-SEMANTIC-02 Coding/Test/E2E | 🟢 PASS |
+| R4 Evidence Closure | 🟢 PASS |
+| **EV1-R4 FINAL** | **🟢 FINAL PASS / CLOSED** |
+
+### 最终架构状态
+
+```
+TBL_PRODUCTION_RECORD（标签补打 / Source Data）
+    ↓ Reference only
+    ❌ 不进入 Production Truth
+
+TBL_DAILY_PRODUCTION_PLAN（Production Truth）
+    ├── carton_count
+    ├── units_per_carton_snapshot
+    ├── loose_quantity
+    └── actual_quantity = carton_count × units_per_carton + loose_quantity
+        ↓
+    ├── Dashboard（SUM(carton_count) + SUM(actual_quantity)）
+    └── Report（10-row matrix, row6=row2+row3+row5）
+```
+
+### 冻结结论
+
+- Jili `/Cron/Jili/lists/` = 标签补打候选数据源，**NOT AUTHORIZED** 作为生产数量源
+- Production Quantity FROZEN
+- R2-AMENDMENT actual_quantity 公式 FROZEN
+- Carton Specification 三维模型 FROZEN
+- row6 = row2 + row3 + row5 FROZEN
+
+### Git 提交
+
+- commit `1342cd2`：R4-DATA-SEMANTIC-02 最终变更（7 files, +1285 -9）
+
+**EV1-R4 正式结项。下一阶段（EV1-R5）须等待大G项目经理明确授权，华为云开发团队不得自行跨 Gate。**
