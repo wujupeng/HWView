@@ -46,6 +46,9 @@ func (s *Store) AutoMigrate() error {
 		&model.DataSourceHealth{},
 		&model.Agent{},
 		&model.AuditLog{},
+		&model.CartonSpecification{},
+		&model.DailyProductionPlan{},
+		&model.HolidayCalendar{},
 	)
 }
 

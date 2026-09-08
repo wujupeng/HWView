@@ -19,6 +19,7 @@ type Server struct {
 	statsSvc   *StatisticsService
 	agentSvc   *AgentService
 	healthSvc  *HealthService
+	reportSvc  *ReportService
 }
 
 func New(cfg *config.Config, adapterReg *adapters.Registry, db *gorm.DB) *Server {
@@ -32,7 +33,8 @@ func New(cfg *config.Config, adapterReg *adapters.Registry, db *gorm.DB) *Server
 	statsSvc := NewStatisticsService(db, recordRepo, lineRepo, cfg.Shadow.Enabled && cfg.Shadow.StatisticsShadow, cfg.Shadow.QuantityLabel)
 	agentSvc := NewAgentService(db, auditSvc)
 	healthSvc := NewHealthService(db)
-	return &Server{cfg: cfg, adapterReg: adapterReg, authMW: authMW, lineSvc: lineSvc, srcSvc: srcSvc, statsSvc: statsSvc, agentSvc: agentSvc, healthSvc: healthSvc}
+	reportSvc := NewReportService(db)
+	return &Server{cfg: cfg, adapterReg: adapterReg, authMW: authMW, lineSvc: lineSvc, srcSvc: srcSvc, statsSvc: statsSvc, agentSvc: agentSvc, healthSvc: healthSvc, reportSvc: reportSvc}
 }
 
 func (s *Server) RegisterRoutes(router *gin.Engine) error {
@@ -45,6 +47,7 @@ func (s *Server) RegisterRoutes(router *gin.Engine) error {
 	s.statsSvc.RegisterRoutes(api)
 	s.agentSvc.RegisterRoutes(api)
 	s.healthSvc.RegisterRoutes(api)
+	s.reportSvc.RegisterRoutes(api)
 	return nil
 }
 
