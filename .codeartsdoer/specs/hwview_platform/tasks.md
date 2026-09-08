@@ -2,11 +2,11 @@
 
 > 文档定位：本文件将 spec.md 的需求规格与 design.md 的技术设计分解为可执行、可验收的编码任务清单。
 > 阶段：第三阶段编码任务规划（Spec-Driven Development）
-> 上游规格：`.codeartsdoer/specs/hwview_platform/spec.md`（14 章，869 行）
-> 上游设计：`.codeartsdoer/specs/hwview_platform/design.md`（14 个二级章节，1817 行）
-> 设计基线：EV1 设计基线（AUTHORIZED）+ 9 项 TASK-HWV-EV1-001~009 + Golden Evidence（433/5395/Q0926-078）+ EV1 红线 8 项
-> 命名规范：任务 ID 大写连字符（TASK-HWV-EV1-XXX-NN）；文件名 snake_case；表名 TBL_ 前缀大写下划线；项目命名大写连字符（HWView-EV1）
-> 技术栈：后端 Go + Gin + goquery + Viper + slog；前端 React 18 + TypeScript(Strict) + Vite + React Query + Recharts；数据库 SQLite/PostgreSQL
+> 上游规格：`.codeartsdoer/specs/hwview_platform/spec.md`（18 章，1286 行，含 §18 EV1-R4 导出报表需求）
+> 上游设计：`.codeartsdoer/specs/hwview_platform/design.md`（含 §1-§2 EV1 主链 + §3 导出报表增量设计 §3.1-§3.10，2741 行）
+> 设计基线：EV1 设计基线（AUTHORIZED）+ 9 项 TASK-HWV-EV1-001~009 + Golden Evidence（433/5395/Q0926-078）+ EV1 红线 8 项 + EV1-R4 报表增量（5 主任务 / 28 子任务）+ R4 红线 11 项
+> 命名规范：任务 ID 大写连字符（TASK-HWV-EV1-XXX-NN / TASK-HWV-EV1-R4-XXX-NN）；文件名 snake_case；表名 TBL_ 前缀大写下划线；项目命名大写连字符（HWView-EV1）
+> 技术栈：后端 Go + Gin + goquery + Viper + slog + excelize（R4 Excel 导出）；前端 React 18 + TypeScript(Strict) + Vite + React Query + Recharts；数据库 SQLite/PostgreSQL
 
 ---
 
@@ -109,6 +109,49 @@ package "EV2 接口预定义" as EV2 {
   [EV2-01 TBL_AGENT 迁移] as TE1
   [EV2-02 Heartbeat 协议] as TE2
   [EV2-03 IP_CHANGED 协议] as TE3
+}
+
+package "EV1-R4 报表数据库层" as R4DB {
+  [R4-001-01 TBL_DAILY_PRODUCTION_PLAN] as R4D1
+  [R4-001-02 TBL_HOLIDAY_CALENDAR] as R4D2
+  [R4-001-03 AutoMigrate 集成] as R4D3
+  [R4-001-04 PlanRepo CRUD] as R4D4
+  [R4-001-05 HolidayRepo CRUD] as R4D5
+  [R4-001-06 仓储单元测试] as R4D6
+}
+
+package "EV1-R4 报表后端服务" as R4BE {
+  [R4-002-01 角色权限扩展] as R4B1
+  [R4-002-02 report_service 聚合] as R4B2
+  [R4-002-03 自动计算行+累计列] as R4B3
+  [R4-002-04 标签补打参考聚合] as R4B4
+  [R4-002-05 excelize 依赖] as R4B5
+  [R4-002-06 excel_exporter] as R4B6
+  [R4-002-07 REST API+路由] as R4B7
+  [R4-002-08 service 单测] as R4B8
+  [R4-002-09 exporter 单测] as R4B9
+}
+
+package "EV1-R4 报表前端" as R4FE {
+  [R4-003-01 路由+类型+权限] as R4F1
+  [R4-003-02 React Query hooks] as R4F2
+  [R4-003-03 报表预览页] as R4F3
+  [R4-003-04 人工录入表单] as R4F4
+  [R4-003-05 节假日配置页] as R4F5
+  [R4-003-06 导出按钮+下载] as R4F6
+}
+
+package "EV1-R4 测试与验证" as R4TV {
+  [R4-004-01 API 集成测试] as R4T1
+  [R4-004-02 业务台账基准校验] as R4T2
+  [R4-004-03 数据分离红线核对] as R4T3
+  [R4-004-04 端到端一致性] as R4T4
+}
+
+package "EV1-R4 部署与 Gate" as R4DG {
+  [R4-005-01 交叉编译+远程更新] as R4G1
+  [R4-005-02 R4 Evidence 生成] as R4G2
+  [R4-005-03 PM 裁决准备] as R4G3
 }
 
 package "测试与验证" as TEST {
@@ -214,6 +257,62 @@ TE2 --> TE1
 TE2 --> T0024
 TE3 --> TE2
 
+' R4 数据库层依赖
+R4D1 --> T0003
+R4D2 --> T0003
+R4D3 --> R4D1
+R4D3 --> R4D2
+R4D4 --> R4D1
+R4D5 --> R4D2
+R4D6 --> R4D4
+R4D6 --> R4D5
+
+' R4 后端服务依赖
+R4B1 --> T0001
+R4B2 --> R4D4
+R4B2 --> R4D5
+R4B3 --> R4B2
+R4B4 --> T0072
+R4B4 --> R4B2
+R4B5 --> T0001
+R4B6 --> R4B5
+R4B6 --> R4B3
+R4B7 --> R4B2
+R4B7 --> R4B6
+R4B7 --> R4B1
+R4B8 --> R4B7
+R4B9 --> R4B6
+
+' R4 前端依赖
+R4F1 --> T0002
+R4F1 --> R4B1
+R4F2 --> R4F1
+R4F3 --> R4F2
+R4F3 --> R4B7
+R4F4 --> R4F2
+R4F4 --> R4B7
+R4F5 --> R4F2
+R4F5 --> R4B7
+R4F6 --> R4F3
+R4F6 --> R4B7
+
+' R4 测试依赖
+R4T1 --> R4B7
+R4T1 --> R4D6
+R4T2 --> R4B8
+R4T2 --> R4B9
+R4T3 --> R4B2
+R4T4 --> R4F6
+R4T4 --> R4T1
+
+' R4 部署与 Gate 依赖
+R4G1 --> TP3
+R4G1 --> R4T4
+R4G2 --> R4G1
+R4G2 --> R4T2
+R4G2 --> R4T3
+R4G3 --> R4G2
+
 ' 测试依赖
 TT1 --> T0015
 TT1 --> T0025
@@ -261,6 +360,13 @@ TG4 --> TG3
   DEPLOY-01→DEPLOY-02→DEPLOY-03     ∥
   EV2-01→EV2-02→EV2-03
    ↓
+[阶段 2.5 EV1-R4 报表增量]（EV1 主链 + EV2 + Deploy 完成后启动）
+  R4-001-01∥R4-001-02 → R4-001-03 → R4-001-04∥R4-001-05 → R4-001-06
+  → R4-002-01 → R4-002-02 → R4-002-03∥R4-002-04 → R4-002-05 → R4-002-06 → R4-002-07 → R4-002-08∥R4-002-09
+  → R4-003-01 → R4-003-02 → R4-003-03 → R4-003-04∥R4-003-05 → R4-003-06
+  → R4-004-01∥R4-004-02∥R4-004-03 → R4-004-04
+  → R4-005-01 → R4-005-02 → R4-005-03
+   ↓
 [阶段 3 测试与验证] TEST-01→TEST-02→TEST-03→TEST-04
    ↓
 [阶段 4 Evidence Gate] GATE-01→GATE-02→GATE-03→GATE-04
@@ -272,6 +378,7 @@ TG4 --> TG3
 - 阶段 0：000-01（Go）与 000-02（前端）与 000-03（DB 脚本）三者可并行
 - 阶段 2：Dashboard、Deploy、EV2 接口预定义三组可并行
 - 009 Health Monitor 与 008 Scheduler 在 007 完成后可适度并行（008-02 依赖 009-02）
+- 阶段 2.5 R4：R4-001-01∥R4-001-02（两表迁移可并行）；R4-001-04∥R4-001-05（两仓储可并行）；R4-002-03∥R4-002-04（自动计算与参考聚合可并行）；R4-002-08∥R4-002-09（service 与 exporter 单测可并行）；R4-003-04∥R4-003-05（录入表单与节假日配置可并行）；R4-004-01∥R4-004-02∥R4-004-03（三类测试可并行）
 
 ---
 
@@ -1084,11 +1191,576 @@ TG4 --> TG3
 
 ---
 
-## 14. 测试与验证
+## 14. EV1-R4 102日产出计划导出报表（增量）
+
+> 对应 spec.md §18（EV1-R4 新增能力）+ design.md §3（导出报表增量设计 §3.1-§3.10）。
+> 前置裁决：R2 CLOSED（§16）+ R3 CLOSED（§17）+ Production Quantity FROZEN。
+> 命名约束：报表命名"102日产出计划报表"，禁含"生产数量"字样；表名 TBL_ 前缀大写下划线（PREFERENCE_17）。
+> 数据分离红线：核心 10 行仅来自人工录入（TBL_DAILY_PRODUCTION_PLAN），标签补打数据（A/B/D）仅入参考区域，禁止进入核心行（R2/FROZEN 约束）。
+
+### 14.1 TASK-HWV-EV1-R4-001 数据库层（2 张新表 + 仓储）
+
+#### 14.1.1 TASK-HWV-EV1-R4-001-01 TBL_DAILY_PRODUCTION_PLAN 表迁移 + model
+
+- [ ] **任务描述**：编写 `TBL_DAILY_PRODUCTION_PLAN` 表迁移与 GORM model 定义，存储人工录入的核心 10 行数据（行6/行9 不存储，由系统计算）
+- [ ] **输入依赖**：TASK-HWV-EV1-000-03（数据库初始化脚本）
+- [ ] **输出产物**：
+  - `pkg/model/daily_production_plan.go`（领域对象 DailyProductionPlan，字段 ID/PlanDate/RowNo/Value/LineCode/InputBy/InputAt/UpdatedAt）
+  - `internal/store/migration/daily_production_plan.go`（迁移注册）
+- [ ] **验收标准**：
+  1. 表结构与 design.md §3.3.2 DDL 一致：`id BIGINT PK AUTOINCREMENT` / `plan_date DATE NOT NULL` / `row_no INT NOT NULL CHECK 1-10` / `value INT NULL` / `line_code VARCHAR(64) NOT NULL DEFAULT 'HW102'` / `input_by VARCHAR(128) NOT NULL` / `input_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP` / `updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`
+  2. 唯一索引 `UQ_PLAN_DATE_ROW_LINE (plan_date, row_no, line_code)` 创建（spec.md §18.4.2 第 3 项录入覆盖规则）
+  3. 辅助索引 `IDX_PLAN_DATE` / `IDX_PLAN_LINE_DATE` / `IDX_PLAN_ROW` 创建
+  4. GORM struct tag 声明 `gorm:"uniqueIndex:uq_plan_date_row_line,priority:1"` 等
+  5. 表名常量 `TBL_DAILY_PRODUCTION_PLAN` 符合 TBL_ 前缀大写下划线规范（spec.md §18.9.3 第 2 项 + PREFERENCE_17）
+  6. value 字段为 `*int`（可空，未录入时 NULL，spec.md §18.7.1 第 3 项）
+- [ ] **对应条款**：design.md 3.3.2 / 3.8.1；spec.md 18.7.1 / 18.9.3
+
+#### 14.1.2 TASK-HWV-EV1-R4-001-02 TBL_HOLIDAY_CALENDAR 表迁移 + model
+
+- [ ] **任务描述**：编写 `TBL_HOLIDAY_CALENDAR` 表迁移与 GORM model 定义，存储可配置的节假日清单，驱动报表黄色标注
+- [ ] **输入依赖**：TASK-HWV-EV1-000-03
+- [ ] **输出产物**：
+  - `pkg/model/holiday_calendar.go`（领域对象 HolidayCalendar，字段 ID/HolidayDate/HolidayName/IsRest/ConfigBy/ConfigAt/UpdatedAt）
+  - `internal/store/migration/holiday_calendar.go`（迁移注册）
+- [ ] **验收标准**：
+  1. 表结构与 design.md §3.3.3 DDL 一致：`id BIGINT PK` / `holiday_date DATE NOT NULL UNIQUE` / `holiday_name VARCHAR(128) NOT NULL` / `is_rest BOOLEAN NOT NULL DEFAULT TRUE` / `config_by VARCHAR(128) NOT NULL` / `config_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP` / `updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP`
+  2. 唯一索引 `UQ_HOLIDAY_DATE (holiday_date)` 创建（spec.md §18.6 第 3 项冲突场景以最后生效为准，UPSERT 兜底）
+  3. 辅助索引 `IDX_HOLIDAY_REST` 创建
+  4. 表名常量 `TBL_HOLIDAY_CALENDAR` 符合 TBL_ 前缀规范
+  5. IsRest 字段类型为 `bool`，GORM tag `gorm:"default:true"`
+- [ ] **对应条款**：design.md 3.3.3 / 3.8.1；spec.md 18.7.2 / 18.4.3
+
+#### 14.1.3 TASK-HWV-EV1-R4-001-03 GORM AutoMigrate 集成
+
+- [ ] **任务描述**：将新增 2 张表纳入 `internal/store/migration/migration.go` 统一迁移函数，与现有 7 张表共用同一 AutoMigrate 入口
+- [ ] **输入依赖**：TASK-HWV-EV1-R4-001-01、TASK-HWV-EV1-R4-001-02
+- [ ] **输出产物**：`internal/store/migration/migration.go`（追加注册）
+- [ ] **验收标准**：
+  1. 迁移顺序：先现有 7 张表（保持 EV1 依赖顺序，design.md §2.3.2），后新增 2 张表（无外键依赖，顺序无约束，design.md §3.3.5）
+  2. 调用 `db.AutoMigrate(&DailyProductionPlan{}, &HolidayCalendar{})` 一次性建表
+  3. SQLite 与 PostgreSQL 兼容：DDL 采用标准类型（BIGINT/DATE/TIMESTAMP/BOOLEAN/VARCHAR），避免方言差异
+  4. 部署时一次性建表，不修改已有 7 张表 DDL（design.md §3.3.5 协调策略）
+  5. 迁移幂等：重复执行不报错、不丢数据
+- [ ] **对应条款**：design.md 3.3.5 / 3.8.3；spec.md 18.9.3
+
+#### 14.1.4 TASK-HWV-EV1-R4-001-04 DailyProductionPlanRepo CRUD 仓储
+
+- [ ] **任务描述**：实现 `DailyProductionPlanRepo` 仓储，提供按"日期 × 行号 × 产线"粒度的 CRUD 与批量查询，支持 UPSERT 覆盖更新
+- [ ] **输入依赖**：TASK-HWV-EV1-R4-001-01
+- [ ] **输出产物**：`internal/store/daily_production_plan_repo.go`
+- [ ] **验收标准**：
+  1. 方法签名：`CreateOrUpdate(ctx, *DailyProductionPlan) error`（UPSERT，UNIQUE(plan_date, row_no, line_code) 兜底，spec.md §18.4.2 第 3 项录入覆盖规则）
+  2. `GetByDateAndRow(ctx, planDate, rowNo, lineCode) (*DailyProductionPlan, error)`
+  3. `ListByDateRange(ctx, startDate, endDate, lineCode) ([]DailyProductionPlan, error)`（报表聚合用）
+  4. `DeleteByID(ctx, id) error`
+  5. `BatchCreateOrUpdate(ctx, []DailyProductionPlan) error`（事务批量录入，spec.md §18.4.2 第 2 项录入粒度）
+  6. **行号可录入性约束**：写入前校验 `row_no ∉ {6, 9}`，拒绝并返回 `ErrAutoCalcRowNotWritable`（spec.md §18.7.1 第 6 项 + §18.4.2 第 4 项禁止项）
+  7. **非负约束**：value 非 nil 时校验 `*value >= 0`，拒绝负数（spec.md §18.7.1 第 3 项）
+  8. 错误码采用 HTK-E- 前缀结构化（PREFERENCE_2）
+- [ ] **对应条款**：design.md 3.3.2 / 3.4.2；spec.md 18.4.2 / 18.7.1
+
+#### 14.1.5 TASK-HWV-EV1-R4-001-05 HolidayRepo CRUD 仓储
+
+- [ ] **任务描述**：实现 `HolidayRepo` 仓储，提供节假日 CRUD 与按日期范围批量查询
+- [ ] **输入依赖**：TASK-HWV-EV1-R4-001-02
+- [ ] **输出产物**：`internal/store/holiday_repo.go`
+- [ ] **验收标准**：
+  1. 方法签名：`Upsert(ctx, *HolidayCalendar) error`（UNIQUE(holiday_date) 兜底，spec.md §18.6 第 3 项冲突场景以最后生效为准）
+  2. `GetByDate(ctx, date) (*HolidayCalendar, error)`
+  3. `ListByDateRange(ctx, startDate, endDate) ([]HolidayCalendar, error)`（报表黄色标注用）
+  4. `ListAll(ctx) ([]HolidayCalendar, error)`（配置页列表用）
+  5. `DeleteByDate(ctx, date) error`
+  6. UPSERT 实现：存在则更新（holiday_name/is_rest/config_by/updated_at），不存在则插入
+  7. 错误码采用 HTK-E- 前缀结构化
+- [ ] **对应条款**：design.md 3.3.3 / 3.4.3；spec.md 18.4.3 / 18.7.2
+
+#### 14.1.6 TASK-HWV-EV1-R4-001-06 仓储单元测试
+
+- [ ] **任务描述**：为 `DailyProductionPlanRepo` 与 `HolidayRepo` 编写单元测试，覆盖 CRUD + 约束 + 边界
+- [ ] **输入依赖**：TASK-HWV-EV1-R4-001-04、TASK-HWV-EV1-R4-001-05
+- [ ] **输出产物**：`internal/store/daily_production_plan_repo_test.go`、`internal/store/holiday_repo_test.go`
+- [ ] **验收标准**：
+  1. DailyProductionPlanRepo 测试用例 ≥8 条：
+     - 正常录入（行1/2/3/4/5/7/8/10）
+     - 行6 录入拒绝（返回 ErrAutoCalcRowNotWritable）
+     - 行9 录入拒绝
+     - value 为负数拒绝
+     - value 为 nil 允许（未录入）
+     - 同日期同行同产线 UPSERT 覆盖（旧值被新值替换）
+     - 批量录入事务回滚（部分失败全回滚）
+     - ListByDateRange 返回正确范围
+  2. HolidayRepo 测试用例 ≥5 条：
+     - 正常 UPSERT（新增）
+     - 同日期 UPSERT 覆盖（更新 holiday_name/is_rest）
+     - GetByDate 命中/未命中
+     - ListByDateRange 返回正确范围
+     - DeleteByDate 删除后 GetByDate 返回 NotFound
+  3. 测试使用 SQLite 内存数据库 `:memory:`，无外部依赖
+  4. `go test ./internal/store/... -v -cover` 全部通过
+- [ ] **对应条款**：design.md 3.3.2 / 3.3.3；spec.md 18.7.1 / 18.7.2
+
+### 14.2 TASK-HWV-EV1-R4-002 后端服务层（聚合 + Excel + API）
+
+#### 14.2.1 TASK-HWV-EV1-R4-002-01 角色与权限扩展（生产管理员）
+
+- [ ] **任务描述**：在 Auth Middleware 与 AuthProvider 中扩展"生产管理员"角色，落实 R4 权限矩阵
+- [ ] **输入依赖**：TASK-HWV-EV1-000-01（Go 项目初始化）
+- [ ] **输出产物**：`internal/auth/role.go`（扩充）、`internal/auth/middleware.go`（扩充）
+- [ ] **验收标准**：
+  1. 角色枚举新增 `PRODUCTION_ADMIN`（design.md §3.8.4）
+  2. 权限矩阵落实（design.md §3.8.4 表格）：
+     - 报表预览查看：OPS_ADMIN / PRODUCTION_ADMIN / MONITOR 均可
+     - 报表数据录入：仅 PRODUCTION_ADMIN
+     - 报表导出：OPS_ADMIN / PRODUCTION_ADMIN / MONITOR 均可
+     - 节假日配置：OPS_ADMIN / PRODUCTION_ADMIN
+  3. 录入接口前置条件校验 `role == PRODUCTION_ADMIN`，否则返回 403（spec.md §18.8.2 第 1 项）
+  4. 生产监控员尝试录入返回 403 Forbidden
+  5. 审计 action 枚举新增 `REPORT_INPUT` / `REPORT_EXPORT` / `HOLIDAY_CONFIG`（design.md §3.2.2）
+  6. 现有运维管理员/生产监控员权限不受影响（向后兼容）
+- [ ] **对应条款**：design.md 3.2.2 / 3.8.4；spec.md 18.8.1 / 18.8.2
+
+#### 14.2.2 TASK-HWV-EV1-R4-002-02 report_service 报表聚合 + 数据分离编排
+
+- [ ] **任务描述**：实现 `report_service.go`，编排核心行读取 + 参考区域聚合 + 节假日标注 + 数据来源标注，落实 R2/FROZEN 数据分离红线
+- [ ] **输入依赖**：TASK-HWV-EV1-R4-001-04、TASK-HWV-EV1-R4-001-05
+- [ ] **输出产物**：`internal/server/report_service.go`
+- [ ] **验收标准**：
+  1. 主方法 `Aggregate(ctx, startDate, endDate, lineCode) (*DailyOutputPlanReportResponse, error)` 返回完整报表矩阵（design.md §3.4.4 ReportResponse 结构）
+  2. **数据分离编排**（design.md §3.7.2 编排逻辑）：
+     - fork 双路：一路读 `TBL_DAILY_PRODUCTION_PLAN`（核心行 1/2/3/4/5/7/8/10），一路读 `TBL_PRODUCTION_RECORD` 聚合 A/B/D（复用 Statistics Engine §2.6.1）
+     - 合并为核心矩阵 + 参考区域，物理隔离不混排
+  3. **禁止操作**（design.md §3.7.2 note）：
+     - 核心行 ← SUM(TBL_PRODUCTION_RECORD.quantity)（R2 红线）
+     - 参考区域数据写入 TBL_DAILY_PRODUCTION_PLAN
+     - SQL JOIN 两表推导核心行
+  4. 节假日标注：读取 `TBL_HOLIDAY_CALENDAR`，is_rest=true 的日期列标记黄色（spec.md §18.4.3 第 1 项）
+  5. 数据来源标注：核心行 1/2/3/4/5/7/8/10 Source=MANUAL，行6/行9 Source=AUTO_CALC，参考区域 Source=REFERENCE（design.md §3.7.3）
+  6. 行顺序冻结：按 §18.2.2 顺序 1→10 输出，禁止调整（spec.md §18.2.2 第 1 项）
+  7. 日期列从 start_date 递增至 end_date，每日一列（spec.md §18.2.1 第 1 项）
+  8. 性能约束：响应 ≤3s（95 分位，30 日列 × 10 行聚合，spec.md §18.9.1 第 1 项）
+  9. 异常映射：400（日期格式非法/起止顺序倒置）/ 504（查询超时返回部分数据）
+- [ ] **对应条款**：design.md 3.4.4 / 3.7.2 / 3.7.3；spec.md 18.3 / 18.5.2 / 18.9.1
+
+#### 14.2.3 TASK-HWV-EV1-R4-002-03 自动计算行（行6/行9）+ 累计列
+
+- [ ] **任务描述**：在 `report_service` 中实现行6（合计）与行9（库存）的自动计算逻辑及所有行的累计列计算，禁止依赖 Excel 公式
+- [ ] **输入依赖**：TASK-HWV-EV1-R4-002-02
+- [ ] **输出产物**：`internal/server/report_service.go`（扩充 `computeAutoRows` 与 `computeTotals` 方法）
+- [ ] **验收标准**：
+  1. **行6（合计）计算**（design.md §3.5.4）：对每个日期列 d，`行6[d] = 行2[d] + 行3[d] + 行4[d] + 行5[d]`（nil 视为 0，spec.md §18.4.1 第 2 项）
+  2. **行9（成品库存）计算**（design.md §3.5.4）：对每个日期列 d，`行9[d] = SUM(行7[起始..d]) - SUM(行8[起始..d])`（累计入库 - 累计出货，截至当日，spec.md §18.4.1 第 3 项）
+  3. **累计列计算**（所有行）：`行X.Total = SUM(行X 所有日期列 Values)`（nil 视为 0，spec.md §18.4.1 第 1 项）
+  4. 行6/行9 标记 `IsAuto=true`，禁止人工录入（spec.md §18.4.2 第 4 项）
+  5. 计算在内存完成，不持久化行6/行9（design.md §3.3.4 持久化策略）
+  6. **业务台账基准校验**（spec.md §18.2.3）：录入 2026-09-06 完整台账后，行6 累计应 = E1=2000，行7 累计 = E2=1980，行8 累计 = E3=1680，行9 = E4=300（作为 R4 Evidence 验收项，非运行时强制断言）
+  7. 单元测试覆盖：行6 计算正确性 / 行9 累计差计算正确性 / 累计列计算正确性 / nil 视为 0 / 业务台账基准
+- [ ] **对应条款**：design.md 3.5.4；spec.md 18.4.1 / 18.2.3
+
+#### 14.2.4 TASK-HWV-EV1-R4-002-04 标签补打参考数据聚合（A/B/D）
+
+- [ ] **任务描述**：实现标签补打参考数据聚合方法，从 `TBL_PRODUCTION_RECORD` 计算 A（记录数）/B（唯一条码数）/D（quantity 求和），复用 Statistics Engine 聚合 SQL
+- [ ] **输入依赖**：TASK-HWV-EV1-007-02（每日/批次统计聚合）、TASK-HWV-EV1-R4-002-02
+- [ ] **输出产物**：`internal/server/report_service.go`（扩充 `aggregateLabelReprintReference` 方法）
+- [ ] **验收标准**：
+  1. 复用 §2.6.1 Statistics Engine 聚合 SQL，不重复实现（design.md §3.2.1 / §3.4.6）
+  2. A = COUNT(*)（记录数，spec.md §18.7.3 第 3 项）
+  3. B = COUNT(DISTINCT barcode)（唯一条码数，spec.md §18.7.3 第 2 项）
+  4. D = SUM(quantity)（补打标签总数，spec.md §18.7.3 第 4 项）
+  5. 按日期序列返回，每日期列对应当日聚合值
+  6. **数据用途约束**：本方法返回数据禁止被写入核心数据行，仅用于参考区域渲染（spec.md §18.7.3 第 5 项 + §18.3.1 数据分离规则）
+  7. Source 固定 "REFERENCE"（design.md §3.4.6 LabelReprintReferenceRow）
+  8. 独立暴露接口 `GET /api/v1/reports/label-reprint-reference`，不提供写入核心行能力（design.md §3.4.6）
+- [ ] **对应条款**：design.md 3.4.6 / 3.7.2；spec.md 18.3.2 / 18.7.3
+
+#### 14.2.5 TASK-HWV-EV1-R4-002-05 excelize 依赖引入
+
+- [ ] **任务描述**：引入 `github.com/xuri/excelize/v2` 依赖，确认无 CGO 约束冲突
+- [ ] **输入依赖**：TASK-HWV-EV1-000-01
+- [ ] **输出产物**：`go.mod` / `go.sum` 更新
+- [ ] **验收标准**：
+  1. 依赖 `github.com/xuri/excelize/v2`（最新稳定版，design.md §3.5.1 选型决策）
+  2. 纯 Go 实现，无 CGO 依赖，与现有 `glebarez/sqlite`（无 CGO）约束兼容（spec.md §18.9.3 第 1 项）
+  3. `go vet ./...` 与 `go build ./...` 通过
+  4. 备选库排除：`tealeg/xlsx`（维护活跃度下降）、`qax-os/excelize`（已迁移至 xuri）、CGO 依赖库（违反无 CGO 约束）
+- [ ] **对应条款**：design.md 3.5.1；spec.md 18.9.3
+
+#### 14.2.6 TASK-HWV-EV1-R4-002-06 excel_exporter 生成 .xlsx + 颜色编码
+
+- [ ] **任务描述**：实现 `excel_exporter.go`，使用 excelize 生成 .xlsx 二进制流，落实矩阵布局 + 颜色编码 + 自动计算行 + 累计列
+- [ ] **输入依赖**：TASK-HWV-EV1-R4-002-05、TASK-HWV-EV1-R4-002-03
+- [ ] **输出产物**：`internal/server/excel_exporter.go`
+- [ ] **验收标准**：
+  1. 主方法 `Export(ctx, *DailyOutputPlanReportResponse) ([]byte, error)` 返回 .xlsx 二进制流
+  2. **矩阵布局**（design.md §3.5.2）：
+     - 标题行（行1）："102日产出计划报表（YYYY-MM-DD 至 YYYY-MM-DD）" 合并单元格
+     - 表头行（行2）：列1="行名称" / 列2..列N+1=日期 / 列N+2="累计数量"
+     - 核心数据行（行3-行12）：10 个核心行，按 §18.2.2 顺序冻结
+     - 参考区域标题（行14）："标签补打参考区域（数据来源：TBL_PRODUCTION_RECORD 自动采集）"
+     - 参考数据行（行15-行17）：A/B/D 三行
+     - 数据来源说明（行19）："核心数据行来源：人工录入/MES导入；参考区域来源：自动采集（R2 裁决：禁止进入核心行）"
+  3. **颜色编码**（design.md §3.5.3，spec.md §18.2.2 第 2 项）：
+     - 行1（目标数量老线）整行绿色背景 `#92D050`
+     - 行6（合计）整行蓝色背景 `#BDD7EE`
+     - 节假日列（is_rest=true）黄色背景 `#FFE699`，优先级高于行颜色
+     - 累计列（最右列）浅灰背景 `#F2F2F2`
+     - 参考区域标题行浅蓝背景 `#DEEBF7`
+  4. 样式通过 `NewStyle` 创建 ID，按行列坐标 `SetCellStyle` 批量应用（性能优化，避免逐单元格创建）
+  5. **导出完整性**：导出 Excel 与前端预览完全一致（数据、颜色、行列顺序，spec.md §18.4.4 第 3 项）——通过 report_service.Aggregate() 单一数据源保证
+  6. **内存缓冲**：写入 `bytes.Buffer` 后直接返回，避免磁盘 IO 与临时文件清理（design.md §3.5.5）
+  7. **命名约束**：文件名形如 `102日产出计划报表_YYYYMMDD-YYYYMMDD.xlsx`，禁含"生产数量"字样（spec.md §18.4.4 第 2 项）
+  8. 性能约束：导出 ≤5s（95 分位，30 日范围，spec.md §18.9.1 第 2 项）
+  9. 异常时 Buffer 释放，无残留临时文件（spec.md §18.6 第 4 项导出失败场景）
+- [ ] **对应条款**：design.md 3.5.2 / 3.5.3 / 3.5.5；spec.md 18.2.2 / 18.4.4 / 18.9.1
+
+#### 14.2.7 TASK-HWV-EV1-R4-002-07 REST API handler + 路由注册
+
+- [ ] **任务描述**：实现 R4 REST API handler 并注册 `/api/v1/reports/*` 路由组，覆盖日计划 CRUD / 节假日 CRUD / 报表聚合 / Excel 导出 / 标签补打参考
+- [ ] **输入依赖**：TASK-HWV-EV1-R4-002-02、TASK-HWV-EV1-R4-002-06、TASK-HWV-EV1-R4-002-01
+- [ ] **输出产物**：`internal/server/api/report_handler.go`、`internal/server/router.go`（扩充注册）
+- [ ] **验收标准**：
+  1. **日计划 CRUD**（design.md §3.4.2）：
+     - `POST /api/v1/reports/daily-plan/entries`（创建/覆盖，请求体 CreatePlanEntryRequest）
+     - `GET /api/v1/reports/daily-plan/entries?plan_date=&line_code=`（列表）
+     - `PUT /api/v1/reports/daily-plan/entries/{id}`（覆盖更新）
+     - `DELETE /api/v1/reports/daily-plan/entries/{id}`
+     - `POST /api/v1/reports/daily-plan/entries/batch`（批量录入）
+     - 前置条件：PRODUCTION_ADMIN 角色；后置条件：TBL_AUDIT_LOG 记录 action=REPORT_INPUT（含旧值/新值）
+     - 异常映射：400（row_no 不在 1-10 / value 负数 / 日期格式非法）/ 403（非生产管理员）/ 409（行号为 6 或 9，spec.md §18.4.2 第 4 项）
+  2. **节假日 CRUD**（design.md §3.4.3）：
+     - `POST /api/v1/reports/holidays`（UPSERT）
+     - `GET /api/v1/reports/holidays`（列表）
+     - `PUT /api/v1/reports/holidays/{date}`（更新）
+     - `DELETE /api/v1/reports/holidays/{date}`
+     - 前置条件：OPS_ADMIN 或 PRODUCTION_ADMIN；后置条件：TBL_AUDIT_LOG 记录 action=HOLIDAY_CONFIG
+     - 异常映射：400（日期格式非法/名称为空）/ 403（权限不足）
+  3. **报表聚合**（design.md §3.4.4）：
+     - `GET /api/v1/reports/daily-output-plan?start_date=&end_date=&line_code=`
+     - 前置条件：已认证（PRODUCTION_ADMIN 或 MONITOR 均可，spec.md §18.8.2 第 2 项）
+     - 响应体 DailyOutputPlanReportResponse（含 Dates/Holidays/CoreRows/Reference/GeneratedAt）
+     - 性能 ≤3s（95 分位）
+  4. **Excel 导出**（design.md §3.4.5）：
+     - `GET /api/v1/reports/daily-output-plan/export?start_date=&end_date=&line_code=&format=xlsx`
+     - 响应 Content-Type: `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`
+     - 响应 Content-Disposition: `attachment; filename="102日产出计划报表_YYYYMMDD-YYYYMMDD.xlsx"`
+     - 后置条件：TBL_AUDIT_LOG 记录 action=REPORT_EXPORT（含日期范围）
+     - 异常映射：400（日期格式非法）/ 415（format 非 xlsx）/ 500（Excel 生成异常）
+  5. **标签补打参考**（design.md §3.4.6）：
+     - `GET /api/v1/reports/label-reprint-reference?start_date=&end_date=`
+     - 响应体 LabelReprintReferenceResponse（A/B/D 三行）
+     - 数据用途约束：不提供写入核心行能力
+  6. 所有接口含 `/api/v1/` 版本前缀（继承 §2.2.1 变更策略）
+  7. 路由在 `internal/server/router.go` 注册 `/api/v1/reports/*` 路由组
+  8. 所有写入接口经 Auth Middleware 校验角色（spec.md §18.8.2）
+- [ ] **对应条款**：design.md 3.4.1 / 3.4.2 / 3.4.3 / 3.4.4 / 3.4.5 / 3.4.6 / 3.8.1；spec.md 18.4 / 18.5 / 18.8.2
+
+#### 14.2.8 TASK-HWV-EV1-R4-002-08 report_service 单元测试
+
+- [ ] **任务描述**：为 `report_service` 编写单元测试，覆盖聚合 + 自动计算 + 数据分离 + 节假日标注 + 业务台账基准
+- [ ] **输入依赖**：TASK-HWV-EV1-R4-002-07
+- [ ] **输出产物**：`internal/server/report_service_test.go`
+- [ ] **验收标准**：
+  1. 测试用例 ≥12 条：
+     - 空数据聚合（无录入数据，核心行全 nil，参考区域全 0）
+     - 部分日期录入（仅 9/6 录入，其他日期空）
+     - 行6 自动计算（行2+3+4+5 各日列求和）
+     - 行9 自动计算（累计入库 - 累计出货）
+     - 累计列计算（每行 Total = SUM 日期列）
+     - nil 视为 0 计算
+     - 节假日标注（is_rest=true 的日期列标记）
+     - 数据来源标注（MANUAL/AUTO_CALC/REFERENCE）
+     - 行顺序冻结（输出顺序 1→10）
+     - **数据分离红线**：核心行不来自 TBL_PRODUCTION_RECORD.quantity 求和（R2 红线）
+     - **业务台账基准**（spec.md §18.2.3）：录入 2026-09-06 完整台账后行6 累计=2000 / 行7 累计=1980 / 行8 累计=1680 / 行9=300
+     - 日期范围校验（起止顺序倒置返回 400）
+  2. 测试使用 SQLite 内存数据库 + 模拟 TBL_PRODUCTION_RECORD 数据
+  3. `go test ./internal/server/... -run TestReportService -v -cover` 全部通过
+- [ ] **对应条款**：design.md 3.4.4 / 3.5.4 / 3.7.2；spec.md 18.2.3 / 18.4.1 / 18.9.1
+
+#### 14.2.9 TASK-HWV-EV1-R4-002-09 excel_exporter 单元测试
+
+- [ ] **任务描述**：为 `excel_exporter` 编写单元测试，验证 .xlsx 生成 + 颜色编码 + 矩阵布局 + 命名合规
+- [ ] **输入依赖**：TASK-HWV-EV1-R4-002-06
+- [ ] **输出产物**：`internal/server/excel_exporter_test.go`
+- [ ] **验收标准**：
+  1. 测试用例 ≥8 条：
+     - 生成 .xlsx 字节流非空
+     - 标题行内容含"102日产出计划报表"字样
+     - **命名合规**：文件名不含"生产数量"字样（spec.md §18.1.3 第 1 项）
+     - 行1 整行绿色背景 `#92D050`
+     - 行6 整行蓝色背景 `#BDD7EE`
+     - 节假日列黄色背景 `#FFE699`（优先级高于行颜色）
+     - 累计列浅灰背景 `#F2F2F2`
+     - 行顺序冻结（10 行顺序 1→10）
+  2. 使用 excelize 读取生成的 .xlsx 字节流，校验单元格样式与值
+  3. **导出完整性**：导出 Excel 与输入 DailyOutputPlanReportResponse 完全一致（数据、颜色、行列顺序，spec.md §18.4.4 第 3 项）
+  4. 性能测试：30 日范围导出 ≤5s（spec.md §18.9.1 第 2 项）
+  5. `go test ./internal/server/... -run TestExcelExporter -v -cover` 全部通过
+- [ ] **对应条款**：design.md 3.5.2 / 3.5.3 / 3.5.5；spec.md 18.2.2 / 18.4.4 / 18.9.1
+
+### 14.3 TASK-HWV-EV1-R4-003 前端页面（预览 + 录入 + 节假日 + 导出）
+
+#### 14.3.1 TASK-HWV-EV1-R4-003-01 路由 + 类型定义 + AuthProvider 角色扩展
+
+- [ ] **任务描述**：新增 `/reports/*` 路由组 + TypeScript 类型定义 + AuthProvider 扩展生产管理员角色与路由守卫
+- [ ] **输入依赖**：TASK-HWV-EV1-000-02（前端项目初始化）、TASK-HWV-EV1-R4-002-01
+- [ ] **输出产物**：
+  - `web/src/routes/reports.ts`（路由注册）
+  - `web/src/types/report.ts`（TS 类型定义，禁止 any，PREFERENCE_8）
+  - `web/src/auth/AuthProvider.tsx`（扩充角色枚举）
+- [ ] **验收标准**：
+  1. 路由结构（design.md §3.6.1）：
+     - `/reports/daily-output-plan` → DailyOutputPlanPage（报表预览页）
+     - `/reports/daily-plan/input` → PlanInputPage（人工录入页，仅 PRODUCTION_ADMIN）
+     - `/reports/holidays` → HolidayConfigPage（节假日配置页，OPS_ADMIN 或 PRODUCTION_ADMIN）
+  2. TypeScript 类型定义（design.md §3.4.4 ReportResponse / ReportRow / ReportReferenceArea / ReportReferenceRow 等），Strict 模式禁止 `any`（spec.md §18.9.3 第 1 项 + PREFERENCE_8）
+  3. AuthProvider 角色枚举新增 `PRODUCTION_ADMIN`（design.md §3.8.4）
+  4. 路由守卫：`/reports/daily-plan/input` 仅 PRODUCTION_ADMIN 可访问，越权重定向至预览页并提示权限不足（spec.md §18.8.2 第 1 项 + design.md §3.6.3）
+  5. 现有运维管理员/生产监控员路由不受影响（向后兼容）
+  6. `npm run build` 与 `tsc --noEmit` 通过
+- [ ] **对应条款**：design.md 3.6.1 / 3.8.2 / 3.8.4；spec.md 18.8.2 / 18.9.3
+
+#### 14.3.2 TASK-HWV-EV1-R4-003-02 React Query hooks
+
+- [ ] **任务描述**：实现 R4 React Query hooks，封装 API 调用与缓存失效
+- [ ] **输入依赖**：TASK-HWV-EV1-R4-003-01
+- [ ] **输出产物**：
+  - `web/src/pages/reports/hooks/use_daily_output_plan.ts`（报表聚合查询）
+  - `web/src/pages/reports/hooks/use_plan_entries.ts`（日计划 CRUD）
+  - `web/src/pages/reports/hooks/use_holidays.ts`（节假日 CRUD）
+  - `web/src/pages/reports/hooks/use_export_report.ts`（导出触发）
+- [ ] **验收标准**：
+  1. `useDailyOutputPlan(startDate, endDate, lineCode)`：调用 `GET /api/v1/reports/daily-output-plan`，配置 `refetchInterval` 近实时刷新（继承 §2.9.3 风格）
+  2. `useCreatePlanEntry / useUpdatePlanEntry / useDeletePlanEntry`：调用对应 CRUD 接口，成功后 invalidate 报表聚合查询
+  3. `useHolidays / useCreateHoliday / useUpdateHoliday / useDeleteHoliday`：节假日 CRUD
+  4. `useExportReport(startDate, endDate, lineCode)`：触发导出，返回 Blob
+  5. 所有 hooks 类型安全，响应类型定义于 `types/report.ts`
+  6. 错误处理：API 失败时 toast 提示，不破坏页面
+  7. `npm run build` 通过
+- [ ] **对应条款**：design.md 3.6.1 / 3.6.5；spec.md 18.5 / 18.9.3
+
+#### 14.3.3 TASK-HWV-EV1-R4-003-03 报表预览页面（ReportMatrix + ReferenceArea）
+
+- [ ] **任务描述**：实现报表预览页面，含日期范围选择器 + 10 行 × N 列核心矩阵 + 参考区域 + 颜色编码渲染
+- [ ] **输入依赖**：TASK-HWV-EV1-R4-003-02、TASK-HWV-EV1-R4-002-07
+- [ ] **输出产物**：
+  - `web/src/pages/reports/daily_output_plan_page.tsx`（预览页）
+  - `web/src/pages/reports/components/report_matrix.tsx`（核心矩阵组件）
+  - `web/src/pages/reports/components/reference_area.tsx`（参考区域组件）
+- [ ] **验收标准**：
+  1. **日期范围选择器**（DateRangePicker）：默认近 30 日，可调整（spec.md §18.2.1 第 1 项）
+  2. **核心矩阵**（ReportMatrix，design.md §3.6.2）：
+     - 10 行 × N 列 + 累计列
+     - 行顺序冻结（§18.2.2 第 1 项），行1 绿色背景、行6 蓝色背景、节假日列黄色背景（§3.5.3 颜色编码）
+     - 行6/行9 单元格只读，标注"自动计算"（spec.md §18.4.2 第 4 项）
+     - 累计列最右，浅灰背景
+     - 每个单元格标注数据来源标签（MANUAL/AUTO_CALC/REFERENCE，spec.md §18.3 数据来源分离）
+  3. **参考区域**（ReferenceArea）：A/B/D 三行，独立区块，标题明确标注"数据来源：TBL_PRODUCTION_RECORD 自动采集（R2 裁决：禁止进入核心行）"（design.md §3.6.2）
+  4. 数据获取：React Query 调用 `useDailyOutputPlan`，loading/error 状态处理
+  5. **权限控制**：生产管理员与生产监控员均可查看预览（spec.md §18.8.2 第 2 项）
+  6. 响应式布局：宽屏列展开，窄屏横向滚动
+  7. `npm run build` 通过
+- [ ] **对应条款**：design.md 3.6.2 / 3.7.3；spec.md 18.2 / 18.3 / 18.5.2 / 18.8.2
+
+#### 14.3.4 TASK-HWV-EV1-R4-003-04 人工录入表单
+
+- [ ] **任务描述**：实现人工录入页面，含录入表单（日期 + 行号 + 数值）+ 已录入条目列表，支持覆盖更新
+- [ ] **输入依赖**：TASK-HWV-EV1-R4-003-02、TASK-HWV-EV1-R4-002-07
+- [ ] **输出产物**：
+  - `web/src/pages/reports/plan_input_page.tsx`（录入页）
+  - `web/src/pages/reports/components/plan_input_form.tsx`（录入表单）
+- [ ] **验收标准**：
+  1. **录入表单**（PlanInputForm，design.md §3.6.3）：
+     - 日期选择（DatePicker，单日）
+     - 行号选择（Select，选项 1-10，**排除**行6 与行9，spec.md §18.4.2 第 4 项禁止录入自动计算行）
+     - 数值输入（NumberInput，非负整数，可空）
+     - 产线选择（默认 HW102）
+     - 提交按钮（调用 `useCreatePlanEntry`）
+  2. **已录入条目列表**（PlanEntryTable）：展示当前日期已录入的各行值，支持点击编辑（覆盖更新，spec.md §18.4.2 第 3 项）
+  3. **交互流程**（spec.md §18.5.1）：
+     - 生产管理员登录 → 认证成功
+     - 选择日期 + 行号 + 数值 → 提交
+     - 前端校验行号非 6/9（双重保障，后端亦校验）
+     - 调用录入 API → 后端 UPSERT + 审计 + 重算行6/行9
+     - 返回更新后报表预览（React Query invalidate 触发重新聚合）
+  4. **权限控制**：仅生产管理员可访问（spec.md §18.8.2 第 1 项）；生产监控员访问该路由时重定向至报表预览页并提示权限不足
+  5. 错误处理：API 返回 409（行6/行9 录入）时提示"该行为系统自动计算，不可录入"（spec.md §18.6 第 2 项）
+  6. `npm run build` 通过
+- [ ] **对应条款**：design.md 3.6.3；spec.md 18.4.2 / 18.5.1 / 18.6 / 18.8.2
+
+#### 14.3.5 TASK-HWV-EV1-R4-003-05 节假日配置页面
+
+- [ ] **任务描述**：实现节假日配置页面，含增删改查表单 + 节假日列表
+- [ ] **输入依赖**：TASK-HWV-EV1-R4-003-02、TASK-HWV-EV1-R4-002-07
+- [ ] **输出产物**：
+  - `web/src/pages/reports/holiday_config_page.tsx`（配置页）
+  - `web/src/pages/reports/components/holiday_form.tsx`（节假日表单）
+- [ ] **验收标准**：
+  1. **节假日表单**（HolidayForm，design.md §3.6.4）：日期 + 名称 + 是否休息，提交调用 `useCreateHoliday`
+  2. **节假日列表**（HolidayList）：已配置节假日，支持编辑/删除（调用 useUpdateHoliday/useDeleteHoliday）
+  3. **可维护性**：节假日清单通过界面增删改查，**禁止**硬编码于源代码（spec.md §18.9.4 第 1 项）
+  4. **权限控制**：运维管理员或生产管理员可访问（spec.md §18.7.2 第 4 项配置人）
+  5. UPSERT 行为：同日期再次提交覆盖原配置（spec.md §18.6 第 3 项冲突场景以最后生效为准）
+  6. `npm run build` 通过
+- [ ] **对应条款**：design.md 3.6.4；spec.md 18.4.3 / 18.7.2 / 18.9.4
+
+#### 14.3.6 TASK-HWV-EV1-R4-003-06 导出按钮 + 下载
+
+- [ ] **任务描述**：实现导出按钮，调用导出 API 触发浏览器下载 .xlsx
+- [ ] **输入依赖**：TASK-HWV-EV1-R4-003-03、TASK-HWV-EV1-R4-002-07
+- [ ] **输出产物**：`web/src/pages/reports/components/export_button.tsx`（扩充 use_export_report hook）
+- [ ] **验收标准**：
+  1. 导出按钮调用 `useExportReport` hook（design.md §3.6.5）
+  2. hook 通过 `fetch` 请求 `GET /api/v1/reports/daily-output-plan/export?format=xlsx`，响应类型 `blob`
+  3. 浏览器原生下载：构造 `Blob` + `URL.createObjectURL` + 隐式 `<a download>` 点击，文件名由后端 `Content-Disposition` 指定
+  4. 导出期间按钮显示 loading 状态
+  5. 失败时提示"导出失败，请重试"（spec.md §18.6 第 4 项导出失败场景，前端预览仍可用）
+  6. **权限控制**：生产管理员与生产监控员均可导出（spec.md §18.8.2 第 2 项）
+  7. **命名合规**：下载文件名含"102日产出计划"字样，禁含"生产数量"（spec.md §18.4.4 第 2 项）
+  8. `npm run build` 通过
+- [ ] **对应条款**：design.md 3.6.5；spec.md 18.4.4 / 18.6 / 18.8.2
+
+### 14.4 TASK-HWV-EV1-R4-004 测试与验证
+
+#### 14.4.1 TASK-HWV-EV1-R4-004-01 API 集成测试
+
+- [ ] **任务描述**：编写 R4 API 集成测试，覆盖日计划 CRUD / 节假日 CRUD / 报表聚合 / Excel 导出 / 标签补打参考的端到端 HTTP 调用
+- [ ] **输入依赖**：TASK-HWV-EV1-R4-002-07、TASK-HWV-EV1-R4-001-06
+- [ ] **输出产物**：`test/integration/r4_report_api_test.go`
+- [ ] **验收标准**：
+  1. 测试用例 ≥15 条：
+     - 日计划 CRUD 全流程（创建→查询→更新→删除）
+     - 日计划批量录入
+     - 行6 录入返回 409
+     - 行9 录入返回 409
+     - value 负数返回 400
+     - 非生产管理员录入返回 403
+     - 节假日 CRUD 全流程（UPSERT→查询→更新→删除）
+     - 节假日同日期 UPSERT 覆盖
+     - 报表聚合返回完整矩阵（10 行 + 参考区域）
+     - 报表聚合行6 自动计算正确
+     - 报表聚合行9 自动计算正确
+     - 报表聚合累计列正确
+     - Excel 导出返回 .xlsx 字节流
+     - Excel 导出 Content-Disposition 文件名合规
+     - 标签补打参考返回 A/B/D 三行
+  2. 测试使用 httptest.NewServer 启动 Gin 路由，SQLite 内存数据库
+  3. `go test ./test/integration/... -run TestR4ReportAPI -v` 全部通过
+- [ ] **对应条款**：design.md 3.4 / 3.7；spec.md 18.4 / 18.5
+
+#### 14.4.2 TASK-HWV-EV1-R4-004-02 业务台账基准校验（2026-09-06 E1/E2/E3/E4）
+
+- [ ] **任务描述**：编写业务台账基准校验测试，录入 2026-09-06 完整台账数据后验证行6/行7/行8/行9 累计值符合 E1/E2/E3/E4 基准
+- [ ] **输入依赖**：TASK-HWV-EV1-R4-002-08、TASK-HWV-EV1-R4-002-09
+- [ ] **输出产物**：`test/integration/r4_business_ledger_baseline_test.go`
+- [ ] **验收标准**：
+  1. 录入 2026-09-06 完整台账数据（design.md §3.5.4 业务台账基准校验）：
+     - 行2/3/4/5（实际完成四班次）合计 = 2000
+     - 行7（成品入库）= 1980（33 箱 × 60 只/箱）
+     - 行8（出货）= 1680（28 箱 × 60 只/箱）
+     - 行10（产线成品剩余）适当录入
+  2. 调用报表聚合 API，校验：
+     - 行6 累计 = E1 = 2000（spec.md §18.2.3）
+     - 行7 累计 = E2 = 1980
+     - 行8 累计 = E3 = 1680
+     - 行9 = E4 = 300（5 箱 × 60 只/箱，累计入库 - 累计出货）
+  3. 校验导出 .xlsx 中对应单元格值与预览一致
+  4. 该测试作为 R4 Evidence Gate 验收项（spec.md §18.10），非运行时强制断言
+  5. `go test ./test/integration/... -run TestR4BusinessLedgerBaseline -v` 通过
+- [ ] **对应条款**：design.md 3.5.4；spec.md 18.2.3 / 18.10
+
+#### 14.4.3 TASK-HWV-EV1-R4-004-03 数据分离红线核对
+
+- [ ] **任务描述**：编写数据分离红线核对测试，验证核心行不来自 TBL_PRODUCTION_RECORD.quantity 求和，标签补打数据仅入参考区域
+- [ ] **输入依赖**：TASK-HWV-EV1-R4-002-02
+- [ ] **输出产物**：`test/integration/r4_data_separation_redline_test.go`
+- [ ] **验收标准**：
+  1. **R2 红线核对**（design.md §3.9）：在 TBL_PRODUCTION_RECORD 插入 quantity=100 的记录，调用报表聚合，验证核心行 1/2/3/4/5/7/8/10 各单元格不出现 100 求和值
+  2. **FROZEN 红线核对**：验证参考区域 A/B/D 来自 TBL_PRODUCTION_RECORD 聚合，但核心行不受影响
+  3. **数据来源标注核对**：核心行 Source=MANUAL/AUTO_CALC，参考区域 Source=REFERENCE，无混排
+  4. **物理隔离核对**：grep 检查 report_service.go 无 `JOIN TBL_PRODUCTION_RECORD` 推导核心行的 SQL
+  5. **混排拒绝**：尝试配置标签补打数据进入核心行时拒绝并记录红线违规告警（spec.md §18.6 第 5 项）
+  6. `go test ./test/integration/... -run TestR4DataSeparationRedline -v` 通过
+- [ ] **对应条款**：design.md 3.7 / 3.9；spec.md 18.3 / 18.6 / 18.10
+
+#### 14.4.4 TASK-HWV-EV1-R4-004-04 端到端一致性测试（预览 ↔ 导出）
+
+- [ ] **任务描述**：编写端到端测试，验证前端预览与导出 Excel 内容完全一致（数据、颜色、行列顺序）
+- [ ] **输入依赖**：TASK-HWV-EV1-R4-003-06、TASK-HWV-EV1-R4-004-01
+- [ ] **输出产物**：`test/e2e/r4_preview_export_consistency_test.go`（或 Playwright 前端 E2E）
+- [ ] **验收标准**：
+  1. 录入测试数据 → 调用报表聚合 API 获取预览矩阵 → 调用导出 API 获取 .xlsx → 用 excelize 读取 .xlsx
+  2. **数据一致性**：每个单元格值预览与导出一致
+  3. **颜色一致性**：行1 绿色、行6 蓝色、节假日列黄色、累计列浅灰，预览与导出一致（spec.md §18.4.4 第 3 项导出完整性规则）
+  4. **行列顺序一致性**：10 行顺序 1→10，日期列从 start_date 递增至 end_date
+  5. **命名合规**：导出文件名含"102日产出计划"，禁含"生产数量"（spec.md §18.1.3 第 1 项）
+  6. 测试通过
+- [ ] **对应条款**：design.md 3.5.5 / 3.6.2；spec.md 18.4.4 / 18.1.3
+
+### 14.5 TASK-HWV-EV1-R4-005 部署与 Evidence Gate
+
+#### 14.5.1 TASK-HWV-EV1-R4-005-01 交叉编译 + 远程更新脚本
+
+- [ ] **任务描述**：扩展部署脚本支持 R4 增量更新（含 excelize 依赖交叉编译 + 远程更新 hwview-server）
+- [ ] **输入依赖**：TASK-HWV-EV1-DEPLOY-03（install_remote.sh）、TASK-HWV-EV1-R4-004-04
+- [ ] **输出产物**：`scripts/deploy_r4.sh`（R4 增量部署脚本，PowerShell 调用，PREFERENCE_16）
+- [ ] **验收标准**：
+  1. 交叉编译：`GOOS=linux GOARCH=amd64 go build -o hwview-server ./cmd/hwview-server`（含 excelize 依赖，无 CGO，design.md §3.5.1）
+  2. 前端构建：`npm run build` 产出 `web/dist/`（含 R4 报表页面）
+  3. 远程更新：scp 上传 hwview-server 二进制 + web/dist 至 192.168.2.110（spec.md §4.6.1 部署目标服务器规则）
+  4. systemd 重启：`sudo systemctl restart hwview-server`（spec.md §4.6.3 部署自动化规则）
+  5. **凭据注入**：部署凭据通过环境变量 `<DEPLOY_USER_PASSWORD>` / `<DEPLOY_SUDO_PASSWORD>` 注入，禁止明文（spec.md §4.3.6 / §4.6.5）
+  6. **GORM AutoMigrate 触发**：服务重启时自动建 TBL_DAILY_PRODUCTION_PLAN / TBL_HOLIDAY_CALENDAR 两张新表（design.md §3.8.3）
+  7. 部署后冒烟测试：`curl https://192.168.2.110/api/v1/reports/daily-output-plan?start_date=2026-09-05&end_date=2026-09-30` 返回 200
+  8. 脚本使用 PowerShell（PREFERENCE_16），通过 sshpass 注入凭据（design.md §3 部署章节风格）
+- [ ] **对应条款**：design.md 3.8.3；spec.md 4.6 / 18.9.3
+
+#### 14.5.2 TASK-HWV-EV1-R4-005-02 R4 Evidence 生成
+
+- [ ] **任务描述**：生成 R4 Evidence 包，含报表预览截图 / 导出 .xlsx 文件 / 审计日志样本 / 业务台账基准校验结果
+- [ ] **输入依赖**：TASK-HWV-EV1-R4-005-01、TASK-HWV-EV1-R4-004-02、TASK-HWV-EV1-R4-004-03
+- [ ] **输出产物**：`evidence/r4/` 目录：
+  - `evidence/r4/report_preview_screenshot.png`（报表预览截图）
+  - `evidence/r4/102日产出计划报表_20260905-20260930.xlsx`（导出样本）
+  - `evidence/r4/audit_log_sample.json`（审计日志样本，含 REPORT_INPUT/REPORT_EXPORT/HOLIDAY_CONFIG）
+  - `evidence/r4/business_ledger_baseline_check.md`（业务台账基准校验结果）
+  - `evidence/r4/data_separation_redline_check.md`（数据分离红线核对结果）
+  - `evidence/r4/r4_test_report.md`（R4 测试报告）
+- [ ] **验收标准**：
+  1. 报表预览截图含 10 行 × N 列矩阵 + 参考区域，颜色编码可见（绿/蓝/黄/灰）
+  2. 导出 .xlsx 文件名合规（含"102日产出计划"，禁含"生产数量"，spec.md §18.1.3 第 1 项）
+  3. 审计日志样本含三类 action：REPORT_INPUT（录入/覆盖）、REPORT_EXPORT（导出）、HOLIDAY_CONFIG（节假日配置），每条含 actor/target/change/timestamp（spec.md §18.9.2）
+  4. 业务台账基准校验结果记录：行6 累计=2000 / 行7 累计=1980 / 行8 累计=1680 / 行9=300（spec.md §18.2.3）
+  5. 数据分离红线核对结果记录：核心行不来自 TBL_PRODUCTION_RECORD.quantity 求和，标签补打数据仅入参考区域
+  6. R4 测试报告含所有 R4 测试用例执行结果（仓储单测 / service 单测 / exporter 单测 / API 集成 / 业务台账基准 / 数据分离红线 / 端到端一致性）
+- [ ] **对应条款**：design.md 3.9 / 3.10；spec.md 18.10
+
+#### 14.5.3 TASK-HWV-EV1-R4-005-03 PM 裁决准备
+
+- [ ] **任务描述**：整理 R4 Evidence 摘要，提交 PM 裁决（PASS / CONDITIONAL PASS / HOLD）
+- [ ] **输入依赖**：TASK-HWV-EV1-R4-005-02
+- [ ] **输出产物**：`evidence/r4/r4_evidence_summary.md`（PM 裁决摘要）
+- [ ] **验收标准**：
+  1. 摘要含 R4 验收基准核对表（spec.md §18.10）：
+     - EV1-R4 报表命名合规：命名为"102日产出计划报表"，非"生产数量报表" ✓
+     - EV1-R4 数据来源分离：标签补打数据不进入核心数据行 ✓
+     - EV1-R4 业务台账基准：2026-09-06 录入后行6=2000/行7=1980/行8=1680/行9=300 ✓
+     - EV1-R4 导出格式：.xlsx 含颜色编码（黄/绿/蓝） ✓
+     - EV1-R4 Production Quantity FROZEN：核心行不从源系统自动推导 ✓
+  2. 摘要含 R4 红线落实核对（design.md §3.9 表格逐项）
+  3. 摘要含 R4 测试覆盖率与通过率
+  4. 摘要含 spec.md §18 → design.md §3 追溯矩阵（design.md §3.10）
+  5. 提交 PM 裁决，记录裁决结果（PASS / CONDITIONAL PASS / HOLD）与裁决理由
+  6. 裁决不通过时记录跟进措施与重新裁决时间
+- [ ] **对应条款**：design.md 3.9 / 3.10；spec.md 18.10
+
+---
+
+## 15. 测试与验证
 
 > 对应 spec.md 第 14.4 章 Evidence Gate 裁决规则。验证命令遵循 PREFERENCE_12：go vet + go build + go test。
 
-### 14.1 TASK-HWV-EV1-TEST-01 单元测试套件
+### 15.1 TASK-HWV-EV1-TEST-01 单元测试套件
 
 - [ ] **任务描述**：整合所有单元测试，确保覆盖核心业务逻辑
 - [ ] **输入依赖**：TASK-HWV-EV1-001-05、TASK-HWV-EV1-002-05、TASK-HWV-EV1-003-03、TASK-HWV-EV1-004-03、TASK-HWV-EV1-009-05
@@ -1106,7 +1778,7 @@ TG4 --> TG3
   4. `npm run test`（前端，可选）通过
 - [ ] **对应条款**：design.md 2.12.1；spec.md 14.4
 
-### 14.2 TASK-HWV-EV1-TEST-02 集成测试
+### 15.2 TASK-HWV-EV1-TEST-02 集成测试
 
 - [ ] **任务描述**：整合所有集成测试，验证跨模块调用与 Golden Evidence
 - [ ] **输入依赖**：TASK-HWV-EV1-005-03、TASK-HWV-EV1-006-06、TASK-HWV-EV1-007-04
@@ -1119,7 +1791,7 @@ TG4 --> TG3
   5. `go test ./... -run Integration -v` 全部通过
 - [ ] **对应条款**：design.md 2.4.2 / 2.5.3 / 2.6.2；spec.md 10.5 / 10.6 / 10.7 / 11
 
-### 14.3 TASK-HWV-EV1-TEST-03 端到端测试
+### 15.3 TASK-HWV-EV1-TEST-03 端到端测试
 
 - [ ] **任务描述**：编写端到端测试，验证用户操作路径（运维配置 → 采集 → Dashboard 查询）
 - [ ] **输入依赖**：TASK-HWV-EV1-TEST-02、TASK-HWV-EV1-DASH-04、TASK-HWV-EV1-DEPLOY-03
@@ -1132,7 +1804,7 @@ TG4 --> TG3
   5. 性能验证：总览响应 ≤2s、详情响应 ≤3s（spec.md 4.1.1/4.1.2）
 - [ ] **对应条款**：design.md 2.9 / 2.11；spec.md 5.7 / 4.1
 
-### 14.4 TASK-HWV-EV1-TEST-04 go vet / go build 验证
+### 15.4 TASK-HWV-EV1-TEST-04 go vet / go build 验证
 
 - [ ] **任务描述**：执行静态检查与构建验证，确保代码质量
 - [ ] **输入依赖**：TASK-HWV-EV1-TEST-01
@@ -1150,11 +1822,11 @@ TG4 --> TG3
 
 ---
 
-## 15. Evidence Gate
+## 16. Evidence Gate
 
 > 对应 spec.md 第 14.4 章 Evidence Gate 裁决规则。PM 按项目经理模式逐项裁决。
 
-### 15.1 TASK-HWV-EV1-GATE-01 commit 提交
+### 16.1 TASK-HWV-EV1-GATE-01 commit 提交
 
 - [ ] **任务描述**：将 EV1 全部代码任务成果提交至版本库，commit message 遵循规范
 - [ ] **输入依赖**：TASK-HWV-EV1-TEST-04
@@ -1166,7 +1838,7 @@ TG4 --> TG3
   4. commit 不包含 AI/预测相关代码（spec.md 红线 8）
 - [ ] **对应条款**：spec.md 14.4
 
-### 15.2 TASK-HWV-EV1-GATE-02 测试结果收集
+### 16.2 TASK-HWV-EV1-GATE-02 测试结果收集
 
 - [ ] **任务描述**：收集所有测试结果（单元/集成/端到端/静态检查），生成测试报告
 - [ ] **输入依赖**：TASK-HWV-EV1-GATE-01
@@ -1178,7 +1850,7 @@ TG4 --> TG3
   4. 静态检查结果：go vet / golangci-lint / TypeScript Strict 全部通过
 - [ ] **对应条款**：spec.md 14.4
 
-### 15.3 TASK-HWV-EV1-GATE-03 实际采集 Evidence 生成
+### 16.3 TASK-HWV-EV1-GATE-03 实际采集 Evidence 生成
 
 - [ ] **任务描述**：在实际环境（192.168.2.110）执行一次完整采集，生成实际采集 Evidence
 - [ ] **输入依赖**：TASK-HWV-EV1-TEST-03
@@ -1196,7 +1868,7 @@ TG4 --> TG3
   4. 实际采集结果与 Golden Evidence 完全一致（spec.md 11 章）
 - [ ] **对应条款**：design.md 2.11 / 2.6.2；spec.md 11 / 14.4
 
-### 15.4 TASK-HWV-EV1-GATE-04 PM 裁决准备
+### 16.4 TASK-HWV-EV1-GATE-04 PM 裁决准备
 
 - [ ] **任务描述**：准备 PM 裁决材料，逐项列出 9 项 TASK 的验收结果与 Evidence 引用
 - [ ] **输入依赖**：TASK-HWV-EV1-GATE-02、TASK-HWV-EV1-GATE-03
@@ -1224,11 +1896,11 @@ TG4 --> TG3
 
 ---
 
-## 16. 验收标准汇总
+## 17. 验收标准汇总
 
 > 所有任务的 Acceptance Criteria 汇总，供 PM 逐项裁决。
 
-### 16.1 9 项 TASK-HWV-EV1-001~009 验收标准
+### 17.1 9 项 TASK-HWV-EV1-001~009 验收标准
 
 | 任务 ID | 验收标准 | 对应 Evidence |
 |---------|---------|--------------|
@@ -1242,7 +1914,7 @@ TG4 --> TG3
 | TASK-HWV-EV1-008 | 产线 20:30 关机后查询当日产量显示 Last Successful Collection，状态标记 Source Offline（非 0） | `evidence/test_report.md` 调度测试 + 红线 5 核对 |
 | TASK-HWV-EV1-009 | 产线连续失败时 consecutive_failures 递增，状态转为 DEGRADED 或 OFFLINE；禁止仅用单一时间点判定 | `evidence/test_report.md` 状态机测试 |
 
-### 16.2 EV1 红线 8 项禁止项核对
+### 17.2 EV1 红线 8 项禁止项核对
 
 | 红线编号 | 禁止项 | 核对方法 | 对应任务 |
 |---------|--------|---------|---------|
@@ -1255,7 +1927,7 @@ TG4 --> TG3
 | 7 | 禁止为每条产线复制一套 Collector | 架构审查单一 Collector 实例 | TASK-HWV-EV1-006-05 |
 | 8 | 禁止现在就做复杂 AI/预测 | EV1 范围审查无 AI/预测相关实现 | TASK-HWV-EV1-TEST-04 |
 
-### 16.3 Golden Evidence 一致性核对
+### 17.3 Golden Evidence 一致性核对
 
 | 维度 | 基准值 | 核对方法 | 对应任务 |
 |------|--------|---------|---------|
@@ -1266,7 +1938,7 @@ TG4 --> TG3
 | 批次 | Q0926-078 | `distinct(batch_no) == ["Q0926-078"]` | TASK-HWV-EV1-005-03 |
 | Statistics Golden Result | boxes=433 / pieces=5395 / batch=Q0926-078 | Statistics Engine Test | TASK-HWV-EV1-007-04 |
 
-### 16.4 部署凭据安全核对
+### 17.4 部署凭据安全核对
 
 | 检查项 | 验收条件 | 对应任务 |
 |--------|---------|---------|
@@ -1275,12 +1947,53 @@ TG4 --> TG3
 | systemd 服务单元 | 凭据通过 Environment 注入，实际值由部署环境变量提供 | TASK-HWV-EV1-DEPLOY-01 |
 | 服务运行用户 | User=debian，非 root | TASK-HWV-EV1-DEPLOY-01 |
 | 系统级操作 | 通过 sudo 提权，sudo 审计日志记录 | TASK-HWV-EV1-DEPLOY-03 |
+| R4 部署脚本 | 凭据占位符注入，无明文；含 excelize 依赖交叉编译 | TASK-HWV-EV1-R4-005-01 |
+
+### 17.5 EV1-R4 报表验收标准（5 项 TASK-HWV-EV1-R4-001~005）
+
+| 任务 ID | 验收标准 | 对应 Evidence |
+|---------|---------|--------------|
+| TASK-HWV-EV1-R4-001 | 2 张新表 AutoMigrate 成功；行6/行9 录入拒绝；UPSERT 覆盖生效；仓储单测 ≥13 条通过 | `evidence/r4/r4_test_report.md` 仓储单测 |
+| TASK-HWV-EV1-R4-002 | 报表聚合 ≤3s；导出 ≤5s；行6=行2+3+4+5；行9=累计入库-累计出货；核心行不来自 quantity 求和；.xlsx 含颜色编码；命名含"102日产出计划"禁含"生产数量" | `evidence/r4/r4_test_report.md` service+exporter 单测 + API 集成测试 |
+| TASK-HWV-EV1-R4-003 | 报表预览页 10 行 × N 列 + 参考区域；行1 绿/行6 蓝/节假日黄；录入表单排除行6/行9；节假日配置可增删改查；导出按钮触发浏览器下载 | `evidence/r4/report_preview_screenshot.png` + 前端 build 通过 |
+| TASK-HWV-EV1-R4-004 | API 集成测试 ≥15 条通过；业务台账基准 行6=2000/行7=1980/行8=1680/行9=300；数据分离红线核对通过；预览↔导出一致性通过 | `evidence/r4/business_ledger_baseline_check.md` + `data_separation_redline_check.md` |
+| TASK-HWV-EV1-R4-005 | 交叉编译无 CGO；远程更新成功；GORM AutoMigrate 触发建表；R4 Evidence 包完整；PM 裁决 PASS / CONDITIONAL PASS / HOLD | `evidence/r4/r4_evidence_summary.md` |
+
+### 17.6 EV1-R4 红线 11 项禁止项核对（design.md §3.9）
+
+| 红线编号 | 禁止项 | 核对方法 | 对应任务 |
+|---------|--------|---------|---------|
+| R4-1 | 禁止核心行来自 TBL_PRODUCTION_RECORD.quantity 求和（R2 继承） | report_service 代码审查 + 数据分离红线测试 | TASK-HWV-EV1-R4-004-03 |
+| R4-2 | 禁止核心行自动推导（R3 继承，必须人工录入或外部导入） | 核心行数据来源审查 Source=MANUAL | TASK-HWV-EV1-R4-002-02 |
+| R4-3 | 禁止标签补打数据进入核心行（FROZEN） | 参考区域独立 + 数据来源标注 REFERENCE | TASK-HWV-EV1-R4-004-03 |
+| R4-4 | 禁止报表命名含"生产数量" | 文件名/界面标题/API 路径 grep 检查 | TASK-HWV-EV1-R4-002-09 |
+| R4-5 | 禁止与标签补打记录报表合并 | 报表结构审查核心矩阵与参考区域分属不同区块 | TASK-HWV-EV1-R4-002-06 |
+| R4-6 | 禁止调整 10 行顺序 | ReportRow.RowNo 1-10 固定映射 + exporter 顺序测试 | TASK-HWV-EV1-R4-002-09 |
+| R4-7 | 禁止人工录入行6/行9 | 录入接口 409 + 前端表单排除选项 | TASK-HWV-EV1-R4-002-07 |
+| R4-8 | 禁止两类数据混排 | report_service 物理隔离编排 + 数据来源标注 | TASK-HWV-EV1-R4-002-02 |
+| R4-9 | 禁止导出 Excel 与前端预览不一致 | 端到端一致性测试 | TASK-HWV-EV1-R4-004-04 |
+| R4-10 | 禁止录入/覆盖/导出无审计 | TBL_AUDIT_LOG 记录三类 action | TASK-HWV-EV1-R4-002-07 |
+| R4-11 | 禁止硬编码节假日 | TBL_HOLIDAY_CALENDAR 配置表 + CRUD + 配置页 | TASK-HWV-EV1-R4-003-05 |
+
+### 17.7 R4 业务台账基准与导出格式核对
+
+| 维度 | 基准值 | 核对方法 | 对应任务 |
+|------|--------|---------|---------|
+| 行6 合计（实际完成）E1 | 2000 | 录入 2026-09-06 完整台账后行6 累计 | TASK-HWV-EV1-R4-004-02 |
+| 行7 成品入库 E2 | 1980（33 箱 × 60 只/箱） | 行7 累计 | TASK-HWV-EV1-R4-004-02 |
+| 行8 出货 E3 | 1680（28 箱 × 60 只/箱） | 行8 累计 | TASK-HWV-EV1-R4-004-02 |
+| 行9 成品库存 E4 | 300（5 箱 × 60 只/箱） | 累计入库 - 累计出货 | TASK-HWV-EV1-R4-004-02 |
+| 箱容量 | 60 只/箱 | 品质部确认基准 | TASK-HWV-EV1-R4-004-02 |
+| 导出格式 | .xlsx 含颜色编码（黄/绿/蓝） | excelize 读取校验 | TASK-HWV-EV1-R4-002-09 |
+| 导出文件名 | `102日产出计划报表_YYYYMMDD-YYYYMMDD.xlsx` | Content-Disposition 校验 | TASK-HWV-EV1-R4-002-09 |
+| 报表预览响应 | ≤3s（95 分位，30 日列） | 性能测试 | TASK-HWV-EV1-R4-002-08 |
+| Excel 导出耗时 | ≤5s（95 分位，30 日范围） | 性能测试 | TASK-HWV-EV1-R4-002-09 |
 
 ---
 
-## 17. 任务统计与执行顺序
+## 18. 任务统计与执行顺序
 
-### 17.1 任务统计
+### 18.1 任务统计
 
 | 任务组 | 主任务数 | 子任务数 | 阶段 |
 |--------|---------|---------|------|
@@ -1297,11 +2010,18 @@ TG4 --> TG3
 | 10. 前端 Dashboard | 4 | 4 | 阶段 2（支链并行） |
 | 11. 部署任务 | 3 | 3 | 阶段 2（支链并行） |
 | 12. EV2 Agent 接口预定义 | 3 | 3 | 阶段 2（支链并行） |
-| 13. 测试与验证 | 4 | 4 | 阶段 3 |
-| 14. Evidence Gate | 4 | 4 | 阶段 4 |
-| **合计** | **35** | **56** | **5 个阶段** |
+| 13. EV1-R4 报表数据库层 | 1 | 6 | 阶段 2.5（R4 增量） |
+| 14. EV1-R4 报表后端服务 | 1 | 9 | 阶段 2.5（R4 增量） |
+| 15. EV1-R4 报表前端 | 1 | 6 | 阶段 2.5（R4 增量） |
+| 16. EV1-R4 测试与验证 | 1 | 4 | 阶段 2.5（R4 增量） |
+| 17. EV1-R4 部署与 Evidence Gate | 1 | 3 | 阶段 2.5（R4 增量） |
+| 18. 测试与验证 | 4 | 4 | 阶段 3 |
+| 19. Evidence Gate | 4 | 4 | 阶段 4 |
+| **合计** | **40** | **83** | **6 个阶段** |
 
-### 17.2 执行顺序（严格遵循 spec.md 第 14.1 章）
+> R4 增量统计：5 个主任务 / 28 个子任务（数据库层 6 + 后端服务 9 + 前端 6 + 测试 4 + 部署 Gate 3），覆盖 spec.md §18 全部需求条款与 design.md §3.1-§3.10 全部设计章节。
+
+### 18.2 执行顺序（严格遵循 spec.md 第 14.1 章 + R4 增量）
 
 ```text
 阶段 0（前置，可并行）：000-01 ∥ 000-02 ∥ 000-03 → 000-04
@@ -1319,19 +2039,26 @@ TG4 --> TG3
   DASH-01→DASH-02→DASH-03→DASH-04
   ∥ DEPLOY-01→DEPLOY-02→DEPLOY-03
   ∥ EV2-01→EV2-02→EV2-03
+阶段 2.5（EV1-R4 报表增量）：
+  R4-001-01∥R4-001-02 → R4-001-03 → R4-001-04∥R4-001-05 → R4-001-06
+  → R4-002-01 → R4-002-02 → R4-002-03∥R4-002-04 → R4-002-05 → R4-002-06 → R4-002-07 → R4-002-08∥R4-002-09
+  → R4-003-01 → R4-003-02 → R4-003-03 → R4-003-04∥R4-003-05 → R4-003-06
+  → R4-004-01∥R4-004-02∥R4-004-03 → R4-004-04
+  → R4-005-01 → R4-005-02 → R4-005-03
 阶段 3（测试）：TEST-01→TEST-02→TEST-03→TEST-04
 阶段 4（Evidence Gate）：GATE-01→GATE-02→GATE-03→GATE-04
 阶段 5（PM 裁决）：PASS / CONDITIONAL PASS / HOLD
 ```
 
-### 17.3 关键路径与里程碑
+### 18.3 关键路径与里程碑
 
 - **里程碑 M1**：阶段 0 + 阶段 1 主链完成（TASK-HWV-EV1-001~009 全部子任务通过）
 - **里程碑 M2**：阶段 2 支链完成（Dashboard 可访问 + 部署脚本可用 + EV2 接口预定义就位）
-- **里程碑 M3**：阶段 3 测试全部通过（单元/集成/端到端/静态检查）
-- **里程碑 M4**：阶段 4 Evidence Gate 完成，PM 裁决通过（PASS）
+- **里程碑 M3（R4）**：阶段 2.5 R4 报表增量完成（5 个主任务 / 28 个子任务全部通过 + R4 Evidence Gate PM 裁决 PASS）
+- **里程碑 M4**：阶段 3 测试全部通过（单元/集成/端到端/静态检查 + R4 测试）
+- **里程碑 M5**：阶段 4 Evidence Gate 完成，PM 裁决通过（PASS）
 
-### 17.4 工作量预估
+### 18.4 工作量预估
 
 | 任务组 | 预估工作量（人天） |
 |--------|-------------------|
@@ -1348,10 +2075,17 @@ TG4 --> TG3
 | 10. 前端 Dashboard | 4 |
 | 11. 部署任务 | 1.5 |
 | 12. EV2 接口预定义 | 1 |
-| 13. 测试与验证 | 3 |
-| 14. Evidence Gate | 2 |
-| **合计** | **32.5 人天** |
+| 13. EV1-R4 报表数据库层 | 2（2 张新表 + 2 仓储 + AutoMigrate + 单测） |
+| 14. EV1-R4 报表后端服务 | 5（report_service + excel_exporter + API + 单测，含 excelize 选型） |
+| 15. EV1-R4 报表前端 | 4（预览页 + 录入表单 + 节假日配置 + 导出按钮） |
+| 16. EV1-R4 测试与验证 | 2.5（API 集成 + 业务台账基准 + 数据分离红线 + 端到端一致性） |
+| 17. EV1-R4 部署与 Evidence Gate | 1.5（交叉编译 + 远程更新 + Evidence 生成 + PM 裁决） |
+| 18. 测试与验证 | 3 |
+| 19. Evidence Gate | 2 |
+| **合计** | **46.5 人天** |
+
+> R4 增量工作量：15 人天（数据库层 2 + 后端服务 5 + 前端 4 + 测试 2.5 + 部署 Gate 1.5），相对 EV1 主链 32.5 人天增量 46%。
 
 ---
 
-> 文档结束。本 tasks.md 将 spec.md 的需求规格与 design.md 的技术设计分解为 35 个主任务 / 56 个子任务，覆盖 9 项 TASK-HWV-EV1-001~009 + 前端 Dashboard + 部署 + EV2 接口预定义 + 测试与验证 + Evidence Gate。后续代码实现由开发阶段承担，PM 按项目经理模式逐项裁决。
+> 文档结束。本 tasks.md 将 spec.md 的需求规格与 design.md 的技术设计分解为 40 个主任务 / 83 个子任务，覆盖 9 项 TASK-HWV-EV1-001~009 + 前端 Dashboard + 部署 + EV2 接口预定义 + **EV1-R4 102日产出计划导出报表增量（5 主任务 / 28 子任务）** + 测试与验证 + Evidence Gate。R4 任务序列落实 R2/R3/FROZEN 裁决约束、数据分离红线、命名合规、业务台账基准（2026-09-06 E1/E2/E3/E4）与 R4 Evidence Gate 验收。后续代码实现由开发阶段承担，PM 按项目经理模式逐项裁决。
