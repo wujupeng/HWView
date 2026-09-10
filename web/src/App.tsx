@@ -1,11 +1,10 @@
 import { ReactNode } from 'react';
 import { Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
-import OverviewPage from './pages/overview/OverviewPage';
-import LineDetailPage from './pages/line_detail/LineDetailPage';
 import ReportPage from './pages/reports/ReportPage';
 import InputPage from './pages/reports/InputPage';
 import HolidayPage from './pages/reports/HolidayPage';
 import CartonSpecPage from './pages/config/CartonSpecPage';
+import CalendarPage from './pages/calendar/CalendarPage';
 import LoginPage from './pages/auth/LoginPage';
 import { getStoredKey, clearKey } from './api/client';
 
@@ -19,7 +18,7 @@ function RequireAuth({ children }: { children: ReactNode }) {
 function Nav() {
   const location = useLocation();
   const links = [
-    { to: '/', label: '总览' },
+    { to: '/calendar', label: '采集日历' },
     { to: '/reports', label: '产出报表' },
     { to: '/reports/input', label: '数据录入' },
     { to: '/reports/holidays', label: '节假日' },
@@ -59,8 +58,10 @@ function App() {
           <div>
             <Nav />
             <Routes>
-              <Route path="/" element={<RequireAuth><OverviewPage /></RequireAuth>} />
-              <Route path="/lines/:lineCode" element={<RequireAuth><LineDetailPage /></RequireAuth>} />
+              <Route path="/" element={<Navigate to="/calendar" replace />} />
+              <Route path="/realtime" element={<Navigate to="/calendar" replace />} />
+              <Route path="/lines/:lineCode" element={<Navigate to="/calendar" replace />} />
+              <Route path="/calendar" element={<RequireAuth><CalendarPage /></RequireAuth>} />
               <Route path="/reports" element={<RequireAuth><ReportPage /></RequireAuth>} />
               <Route path="/reports/input" element={<RequireAuth><InputPage /></RequireAuth>} />
               <Route path="/reports/holidays" element={<RequireAuth><HolidayPage /></RequireAuth>} />
